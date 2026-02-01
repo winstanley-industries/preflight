@@ -1,5 +1,7 @@
 # preflight
 
+> **Status:** Early development. Design complete, implementation not yet started.
+
 A local code review tool for AI-generated changes. Review diffs in the browser, comment on specific lines, and let your AI agent explain code and apply revisions -- all before the work reaches formal review.
 
 Preflight calls no LLM APIs. It exposes an [MCP](https://modelcontextprotocol.io/) server that your existing AI agent (Claude Code, Codex, OpenCode, etc.) connects to, so the agent can participate in review conversations directly.
