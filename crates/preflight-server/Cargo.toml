@@ -1,0 +1,11 @@
+[package]
+name = "preflight-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+preflight-core = { path = "../preflight-core" }
+axum = "0.8.8"
+tokio = { workspace = true }
+tower-http = { version = "0.6.8", features = ["cors"] }
