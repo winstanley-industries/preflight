@@ -17,13 +17,18 @@ Local code review tool for AI-generated changes. See .docs/plans/ for design.
 
 ## Commands
 
-- cargo fmt --check / cargo fmt
-- cargo clippy -- -D warnings
-- cargo test
-- cd frontend && npm run check
-- cd frontend && npm run lint
-- cd frontend && npm run format:check / npm run format
-- cd frontend && npm run build
+Use `just` for common tasks (see `justfile` for all recipes):
+
+- `just check` — Run all checks (same as CI)
+- `just rust` — All Rust checks (fmt, clippy, test)
+- `just frontend` — All frontend checks (fmt, lint, type check, build)
+- `just build` — Full build (frontend + Rust binary)
+- `just fmt` — Auto-format everything
+
+Individual checks:
+
+- `just rust-fmt` / `just rust-clippy` / `just rust-test`
+- `just frontend-fmt` / `just frontend-lint` / `just frontend-check` / `just frontend-build`
 
 ## Rules
 
