@@ -4,8 +4,12 @@ check: rust frontend
 # All Rust checks
 rust: rust-fmt rust-clippy rust-test
 
+# Install frontend dependencies
+frontend-install:
+    cd frontend && npm ci
+
 # All frontend checks
-frontend: frontend-fmt frontend-lint frontend-check frontend-build
+frontend: frontend-install frontend-fmt frontend-lint frontend-check frontend-build
 
 # Rust formatting check
 rust-fmt:

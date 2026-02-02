@@ -28,8 +28,8 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: rust-${{ hashFiles('Cargo.lock') }}
-          restore-keys: rust-
+          key: rust-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: rust-${{ runner.os }}-
 
       - name: Check formatting
         run: cargo fmt -- --check
@@ -90,8 +90,8 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: rust-${{ hashFiles('Cargo.lock') }}
-          restore-keys: rust-
+          key: rust-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: rust-${{ runner.os }}-
 
       - name: Setup Node 24.x
         uses: actions/setup-node@v4
