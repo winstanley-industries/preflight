@@ -48,6 +48,10 @@ fmt:
     cargo fmt
     cd frontend && npm run format
 
+# Build and run the server
+run: build
+    cargo run -p preflight-server
+
 # Dev server
 dev:
     cd frontend && npm run dev

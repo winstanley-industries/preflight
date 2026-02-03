@@ -21,6 +21,17 @@ jobs:
           toolchain: "1.93.0"
           components: clippy, rustfmt
 
+      - name: Setup Node 24.x
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm ci && npm run build
+
       - name: Cache cargo
         uses: actions/cache@v5
         with:

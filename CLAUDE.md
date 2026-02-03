@@ -23,6 +23,7 @@ Use `just` for common tasks (see `justfile` for all recipes):
 - `just rust` — All Rust checks (fmt, clippy, test)
 - `just frontend` — All frontend checks (fmt, lint, type check, build)
 - `just build` — Full build (frontend + Rust binary)
+- `just run` — Build and run the server at http://127.0.0.1:3000
 - `just fmt` — Auto-format everything
 
 Individual checks:
