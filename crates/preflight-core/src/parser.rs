@@ -551,6 +551,20 @@ index abc..def 100644
     }
 
     #[test]
+    fn test_empty_line_in_hunk() {
+        let input = "diff --git a/f b/f\nindex abc..def 100644\n--- a/f\n+++ b/f\n@@ -1,3 +1,3 @@\n first\n\n last\n";
+        let result = parse_diff(input).unwrap();
+        let lines = &result[0].hunks[0].lines;
+        assert_eq!(lines.len(), 3);
+        assert_eq!(lines[0].kind, LineKind::Context);
+        assert_eq!(lines[0].content, "first");
+        assert_eq!(lines[1].kind, LineKind::Context);
+        assert_eq!(lines[1].content, "");
+        assert_eq!(lines[2].kind, LineKind::Context);
+        assert_eq!(lines[2].content, "last");
+    }
+
+    #[test]
     fn test_hunk_count_omitted_means_one() {
         let input = "\
 diff --git a/f b/f
