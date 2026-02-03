@@ -39,7 +39,11 @@ async fn static_handler(uri: axum::http::Uri) -> Response {
     // SPA fallback: serve index.html for any unmatched route
     match Assets::get("index.html") {
         Some(file) => Html(file.data).into_response(),
-        None => (StatusCode::NOT_FOUND, "index.html not found in embedded assets").into_response(),
+        None => (
+            StatusCode::NOT_FOUND,
+            "index.html not found in embedded assets",
+        )
+            .into_response(),
     }
 }
 
