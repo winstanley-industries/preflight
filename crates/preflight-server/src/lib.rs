@@ -24,16 +24,16 @@ async fn static_handler(uri: axum::http::Uri) -> Response {
     let path = uri.path().trim_start_matches('/');
 
     // Try the exact path first
-    if !path.is_empty() {
-        if let Some(file) = Assets::get(path) {
-            let mime = mime_guess::from_path(path).first_or_octet_stream();
-            return (
-                StatusCode::OK,
-                [(header::CONTENT_TYPE, mime.as_ref())],
-                file.data,
-            )
-                .into_response();
-        }
+    if !path.is_empty()
+        && let Some(file) = Assets::get(path)
+    {
+        let mime = mime_guess::from_path(path).first_or_octet_stream();
+        return (
+            StatusCode::OK,
+            [(header::CONTENT_TYPE, mime.as_ref())],
+            file.data,
+        )
+            .into_response();
     }
 
     // SPA fallback: serve index.html for any unmatched route
