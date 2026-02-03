@@ -36,6 +36,7 @@ pub struct AddCommentInput {
     pub body: String,
 }
 
+#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StoreError {
     ReviewNotFound(Uuid),
@@ -54,6 +55,18 @@ impl std::fmt::Display for StoreError {
 }
 
 impl std::error::Error for StoreError {}
+
+impl From<std::io::Error> for StoreError {
+    fn from(e: std::io::Error) -> Self {
+        StoreError::PersistenceError(e.to_string())
+    }
+}
+
+impl From<serde_json::Error> for StoreError {
+    fn from(e: serde_json::Error) -> Self {
+        StoreError::PersistenceError(e.to_string())
+    }
+}
 
 pub trait ReviewStore: Send + Sync {
     fn create_review(&self, input: CreateReviewInput) -> Result<Review, StoreError>;

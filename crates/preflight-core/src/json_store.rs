@@ -27,9 +27,8 @@ impl JsonFileStore {
     pub fn new(path: impl Into<PathBuf>) -> Result<Self, StoreError> {
         let path = path.into();
         let state = if path.exists() {
-            let data = fs::read_to_string(&path)
-                .map_err(|e| StoreError::PersistenceError(e.to_string()))?;
-            serde_json::from_str(&data).map_err(|e| StoreError::PersistenceError(e.to_string()))?
+            let data = fs::read_to_string(&path)?;
+            serde_json::from_str(&data)?
         } else {
             State::default()
         };
@@ -41,20 +40,19 @@ impl JsonFileStore {
 
     fn persist(&self, state: &State) -> Result<(), StoreError> {
         if let Some(parent) = self.path.parent() {
-            fs::create_dir_all(parent).map_err(|e| StoreError::PersistenceError(e.to_string()))?;
+            fs::create_dir_all(parent)?;
         }
         let tmp = self.path.with_extension("tmp");
-        let data = serde_json::to_string_pretty(state)
-            .map_err(|e| StoreError::PersistenceError(e.to_string()))?;
-        fs::write(&tmp, data).map_err(|e| StoreError::PersistenceError(e.to_string()))?;
-        fs::rename(&tmp, &self.path).map_err(|e| StoreError::PersistenceError(e.to_string()))?;
+        let data = serde_json::to_string_pretty(state)?;
+        fs::write(&tmp, data)?;
+        fs::rename(&tmp, &self.path)?;
         Ok(())
     }
 }
 
 impl ReviewStore for JsonFileStore {
     fn create_review(&self, input: CreateReviewInput) -> Result<Review, StoreError> {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         let now = Utc::now();
         let review = Review {
             id: Uuid::new_v4(),
@@ -70,7 +68,7 @@ impl ReviewStore for JsonFileStore {
     }
 
     fn get_review(&self, id: Uuid) -> Result<Review, StoreError> {
-        let state = self.state.lock().unwrap();
+        let state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         state
             .reviews
             .get(&id)
@@ -78,8 +76,9 @@ impl ReviewStore for JsonFileStore {
             .ok_or(StoreError::ReviewNotFound(id))
     }
 
+    // TODO: O(R*T) — pre-build a thread count map if this becomes a hot path
     fn list_reviews(&self) -> Vec<ReviewSummary> {
-        let state = self.state.lock().unwrap();
+        let state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         state
             .reviews
             .values()
@@ -101,7 +100,7 @@ impl ReviewStore for JsonFileStore {
     }
 
     fn update_review_status(&self, id: Uuid, status: ReviewStatus) -> Result<(), StoreError> {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         let review = state
             .reviews
             .get_mut(&id)
@@ -113,7 +112,7 @@ impl ReviewStore for JsonFileStore {
     }
 
     fn create_thread(&self, input: CreateThreadInput) -> Result<CommentThread, StoreError> {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         if !state.reviews.contains_key(&input.review_id) {
             return Err(StoreError::ReviewNotFound(input.review_id));
         }
@@ -134,6 +133,7 @@ impl ReviewStore for JsonFileStore {
             status: ThreadStatus::Open,
             comments: vec![initial_comment],
             created_at: now,
+            updated_at: now,
         };
         state.threads.insert(thread.id, thread.clone());
         self.persist(&state)?;
@@ -145,7 +145,10 @@ impl ReviewStore for JsonFileStore {
         review_id: Uuid,
         file_path: Option<&str>,
     ) -> Result<Vec<CommentThread>, StoreError> {
-        let state = self.state.lock().unwrap();
+        let state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        if !state.reviews.contains_key(&review_id) {
+            return Err(StoreError::ReviewNotFound(review_id));
+        }
         let threads = state
             .threads
             .values()
@@ -160,18 +163,19 @@ impl ReviewStore for JsonFileStore {
         thread_id: Uuid,
         status: ThreadStatus,
     ) -> Result<(), StoreError> {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         let thread = state
             .threads
             .get_mut(&thread_id)
             .ok_or(StoreError::ThreadNotFound(thread_id))?;
         thread.status = status;
+        thread.updated_at = Utc::now();
         self.persist(&state)?;
         Ok(())
     }
 
     fn add_comment(&self, input: AddCommentInput) -> Result<Comment, StoreError> {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         let thread = state
             .threads
             .get_mut(&input.thread_id)
@@ -183,6 +187,7 @@ impl ReviewStore for JsonFileStore {
             created_at: Utc::now(),
         };
         thread.comments.push(comment.clone());
+        thread.updated_at = Utc::now();
         self.persist(&state)?;
         Ok(comment)
     }
@@ -335,6 +340,13 @@ mod tests {
             initial_comment_body: "hi".into(),
             initial_comment_author: AuthorType::Human,
         });
+        assert!(matches!(result, Err(StoreError::ReviewNotFound(_))));
+    }
+
+    #[test]
+    fn test_get_threads_review_not_found() {
+        let (store, _dir) = test_store();
+        let result = store.get_threads(Uuid::new_v4(), None);
         assert!(matches!(result, Err(StoreError::ReviewNotFound(_))));
     }
 

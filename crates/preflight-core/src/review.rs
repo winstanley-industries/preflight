@@ -4,12 +4,14 @@ use uuid::Uuid;
 
 use crate::diff::FileDiff;
 
+#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ReviewStatus {
     Open,
     Closed,
 }
 
+#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ThreadOrigin {
     Comment,
@@ -17,12 +19,14 @@ pub enum ThreadOrigin {
     AgentExplanation,
 }
 
+#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ThreadStatus {
     Open,
     Resolved,
 }
 
+#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AuthorType {
     Human,
@@ -58,4 +62,5 @@ pub struct CommentThread {
     pub status: ThreadStatus,
     pub comments: Vec<Comment>,
     pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
