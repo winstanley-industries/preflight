@@ -13,7 +13,7 @@ jobs:
     name: Rust checks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install Rust 1.93.0
         uses: dtolnay/rust-toolchain@master
@@ -47,7 +47,7 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup Node 24.x
         uses: actions/setup-node@v4
@@ -76,7 +76,7 @@ jobs:
     needs: [rust-check, frontend-check]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install Rust 1.93.0
         uses: dtolnay/rust-toolchain@master
