@@ -1,14 +1,40 @@
-:root {
-  font-family:
-    system-ui,
-    -apple-system,
-    sans-serif;
-  line-height: 1.5;
-  color: #213547;
-  background-color: #ffffff;
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "DM Sans", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --color-bg: #1c1917;
+  --color-bg-surface: #292524;
+  --color-bg-hover: #44403c;
+  --color-bg-active: #57534e;
+  --color-text: #e7e5e4;
+  --color-text-muted: #a8a29e;
+  --color-text-faint: #78716c;
+
+  --color-border: #44403c;
+
+  --color-diff-add-bg: oklch(0.45 0.08 145 / 0.25);
+  --color-diff-add-text: #86efac;
+  --color-diff-remove-bg: oklch(0.45 0.08 25 / 0.25);
+  --color-diff-remove-text: #fca5a5;
+
+  --color-status-open: #86efac;
+  --color-status-closed: #78716c;
+  --color-status-resolved: #78716c;
+  --color-accent: #fbbf24;
+
+  --color-badge-added: #86efac;
+  --color-badge-modified: #fbbf24;
+  --color-badge-deleted: #fca5a5;
+  --color-badge-renamed: #93c5fd;
+  --color-badge-binary: #78716c;
 }
 
-body {
-  margin: 0;
-  min-height: 100vh;
+@layer base {
+  body {
+    @apply bg-bg text-text font-sans antialiased;
+    margin: 0;
+    min-height: 100vh;
+  }
 }
