@@ -19,7 +19,10 @@ pub mod types;
 struct Assets;
 
 pub fn app(store: Arc<dyn ReviewStore>) -> Router {
-    let state = state::AppState { store };
+    let state = state::AppState {
+        store,
+        highlighter: Arc::new(preflight_core::highlight::Highlighter::new()),
+    };
     Router::new()
         .route("/api/health", get(health))
         .nest("/api/reviews", routes::reviews::router())
