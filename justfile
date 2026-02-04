@@ -55,3 +55,31 @@ run: build
 # Dev server
 dev:
     cd frontend && npm run dev
+
+# Create a new worktree with a feature branch based on latest main
+worktree-add branch:
+    git fetch origin
+    git worktree add .worktrees/{{branch}} -b {{branch}} origin/main
+    @echo "Worktree created at .worktrees/{{branch}}"
+
+# List all worktrees
+worktree-list:
+    git worktree list
+
+# Remove a worktree and its branch
+worktree-remove branch:
+    git worktree remove .worktrees/{{branch}}
+    git branch -d {{branch}}
+    @echo "Removed worktree and branch {{branch}}"
+
+# Remove all worktrees
+worktree-clean:
+    #!/usr/bin/env bash
+    for wt in .worktrees/*/; do
+        [ -d "$wt" ] || continue
+        branch=$(basename "$wt")
+        echo "Removing $branch..."
+        git worktree remove "$wt" || true
+        git branch -d "$branch" 2>/dev/null || true
+    done
+    @echo "All worktrees cleaned up"
