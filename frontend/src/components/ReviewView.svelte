@@ -1,7 +1,11 @@
 <script lang="ts">
   import { getReview, listFiles, listThreads } from "../lib/api";
   import { navigate } from "../lib/router.svelte";
-  import type { FileListEntry, ReviewResponse, ThreadResponse } from "../lib/types";
+  import type {
+    FileListEntry,
+    ReviewResponse,
+    ThreadResponse,
+  } from "../lib/types";
   import FileTree from "./FileTree.svelte";
   import DiffView from "./DiffView.svelte";
   import ThreadPanel from "./ThreadPanel.svelte";
@@ -21,7 +25,10 @@
 
   async function load() {
     try {
-      const [r, f] = await Promise.all([getReview(reviewId), listFiles(reviewId)]);
+      const [r, f] = await Promise.all([
+        getReview(reviewId),
+        listFiles(reviewId),
+      ]);
       review = r;
       files = f;
       if (f.length > 0 && !selectedFile) {
@@ -62,7 +69,9 @@
 {:else}
   <div class="flex flex-col h-screen">
     <!-- Header -->
-    <header class="flex items-center gap-3 px-4 py-2 border-b border-border shrink-0">
+    <header
+      class="flex items-center gap-3 px-4 py-2 border-b border-border shrink-0"
+    >
       <button
         class="text-text-muted hover:text-text transition-colors cursor-pointer"
         onclick={() => navigate("/")}
@@ -88,7 +97,9 @@
         <FileTree
           {files}
           {selectedFile}
-          onSelect={(path) => { selectedFile = path; }}
+          onSelect={(path) => {
+            selectedFile = path;
+          }}
         />
       </aside>
 
@@ -109,7 +120,9 @@
           <ThreadPanel
             {reviewId}
             {threads}
-            onThreadsChanged={() => { if (selectedFile) loadThreads(selectedFile); }}
+            onThreadsChanged={() => {
+              if (selectedFile) loadThreads(selectedFile);
+            }}
           />
         </aside>
       {/if}

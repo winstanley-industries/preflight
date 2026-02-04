@@ -44,14 +44,19 @@ export function getReview(id: string): Promise<ReviewResponse> {
   return request(`/api/reviews/${id}`);
 }
 
-export function createReview(req: CreateReviewRequest): Promise<ReviewResponse> {
+export function createReview(
+  req: CreateReviewRequest,
+): Promise<ReviewResponse> {
   return request("/api/reviews", {
     method: "POST",
     body: JSON.stringify(req),
   });
 }
 
-export function updateReviewStatus(id: string, req: UpdateReviewStatusRequest): Promise<void> {
+export function updateReviewStatus(
+  id: string,
+  req: UpdateReviewStatusRequest,
+): Promise<void> {
   return request(`/api/reviews/${id}/status`, {
     method: "PATCH",
     body: JSON.stringify(req),
@@ -64,25 +69,37 @@ export function listFiles(reviewId: string): Promise<FileListEntry[]> {
   return request(`/api/reviews/${reviewId}/files`);
 }
 
-export function getFileDiff(reviewId: string, path: string): Promise<FileDiffResponse> {
+export function getFileDiff(
+  reviewId: string,
+  path: string,
+): Promise<FileDiffResponse> {
   return request(`/api/reviews/${reviewId}/files/${path}`);
 }
 
 // --- Threads ---
 
-export function listThreads(reviewId: string, filePath?: string): Promise<ThreadResponse[]> {
+export function listThreads(
+  reviewId: string,
+  filePath?: string,
+): Promise<ThreadResponse[]> {
   const params = filePath ? `?file=${encodeURIComponent(filePath)}` : "";
   return request(`/api/reviews/${reviewId}/threads${params}`);
 }
 
-export function createThread(reviewId: string, req: CreateThreadRequest): Promise<ThreadResponse> {
+export function createThread(
+  reviewId: string,
+  req: CreateThreadRequest,
+): Promise<ThreadResponse> {
   return request(`/api/reviews/${reviewId}/threads`, {
     method: "POST",
     body: JSON.stringify(req),
   });
 }
 
-export function updateThreadStatus(threadId: string, req: UpdateThreadStatusRequest): Promise<void> {
+export function updateThreadStatus(
+  threadId: string,
+  req: UpdateThreadStatusRequest,
+): Promise<void> {
   return request(`/api/threads/${threadId}/status`, {
     method: "PATCH",
     body: JSON.stringify(req),
@@ -91,7 +108,10 @@ export function updateThreadStatus(threadId: string, req: UpdateThreadStatusRequ
 
 // --- Comments ---
 
-export function addComment(threadId: string, req: AddCommentRequest): Promise<CommentResponse> {
+export function addComment(
+  threadId: string,
+  req: AddCommentRequest,
+): Promise<CommentResponse> {
   return request(`/api/threads/${threadId}/comments`, {
     method: "POST",
     body: JSON.stringify(req),

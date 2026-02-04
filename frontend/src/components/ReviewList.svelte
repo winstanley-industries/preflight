@@ -10,7 +10,9 @@
   function sortedReviews(): ReviewResponse[] {
     return [...reviews].sort((a, b) => {
       if (a.status !== b.status) return a.status === "Open" ? -1 : 1;
-      return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+      return (
+        new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+      );
     });
   }
 
@@ -65,17 +67,22 @@
                     {review.title ?? "Untitled review"}
                   </span>
                   <span
-                    class="shrink-0 text-xs px-2 py-0.5 rounded-full {review.status === 'Open'
+                    class="shrink-0 text-xs px-2 py-0.5 rounded-full {review.status ===
+                    'Open'
                       ? 'bg-status-open/15 text-status-open'
                       : 'bg-bg-hover text-text-faint'}"
                   >
                     {review.status}
                   </span>
                 </div>
-                <div class="flex items-center gap-4 shrink-0 text-sm text-text-muted">
+                <div
+                  class="flex items-center gap-4 shrink-0 text-sm text-text-muted"
+                >
                   <span>{review.file_count} files</span>
                   <span>{review.thread_count} threads</span>
-                  <span class="text-text-faint">{relativeTime(review.updated_at)}</span>
+                  <span class="text-text-faint"
+                    >{relativeTime(review.updated_at)}</span
+                  >
                 </div>
               </div>
             </button>
