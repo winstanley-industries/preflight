@@ -1,3 +1,5 @@
+use async_trait::async_trait;
+
 use crate::diff::FileDiff;
 use crate::review::{AuthorType, CommentThread, Review, ReviewStatus, ThreadOrigin, ThreadStatus};
 use uuid::Uuid;
@@ -68,20 +70,27 @@ impl From<serde_json::Error> for StoreError {
     }
 }
 
+#[async_trait]
 pub trait ReviewStore: Send + Sync {
-    fn create_review(&self, input: CreateReviewInput) -> Result<Review, StoreError>;
-    fn get_review(&self, id: Uuid) -> Result<Review, StoreError>;
-    fn list_reviews(&self) -> Vec<ReviewSummary>;
-    fn update_review_status(&self, id: Uuid, status: ReviewStatus) -> Result<(), StoreError>;
+    async fn create_review(&self, input: CreateReviewInput) -> Result<Review, StoreError>;
+    async fn get_review(&self, id: Uuid) -> Result<Review, StoreError>;
+    async fn list_reviews(&self) -> Vec<ReviewSummary>;
+    async fn update_review_status(&self, id: Uuid, status: ReviewStatus) -> Result<(), StoreError>;
 
-    fn create_thread(&self, input: CreateThreadInput) -> Result<CommentThread, StoreError>;
-    fn get_threads(
+    async fn create_thread(&self, input: CreateThreadInput) -> Result<CommentThread, StoreError>;
+    async fn get_threads(
         &self,
         review_id: Uuid,
         file_path: Option<&str>,
     ) -> Result<Vec<CommentThread>, StoreError>;
-    fn update_thread_status(&self, thread_id: Uuid, status: ThreadStatus)
-    -> Result<(), StoreError>;
+    async fn update_thread_status(
+        &self,
+        thread_id: Uuid,
+        status: ThreadStatus,
+    ) -> Result<(), StoreError>;
 
-    fn add_comment(&self, input: AddCommentInput) -> Result<crate::review::Comment, StoreError>;
+    async fn add_comment(
+        &self,
+        input: AddCommentInput,
+    ) -> Result<crate::review::Comment, StoreError>;
 }
