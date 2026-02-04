@@ -1,0 +1,106 @@
+import type {
+  AddCommentRequest,
+  CommentResponse,
+  CreateReviewRequest,
+  CreateThreadRequest,
+  FileDiffResponse,
+  FileListEntry,
+  ReviewResponse,
+  ThreadResponse,
+  UpdateReviewStatusRequest,
+  UpdateThreadStatusRequest,
+} from "./types";
+
+export class ApiError extends Error {
+  constructor(
+    public status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(path, {
+    headers: { "Content-Type": "application/json" },
+    ...options,
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new ApiError(res.status, body.error ?? res.statusText);
+  }
+  if (res.status === 204) return undefined as T;
+  return res.json();
+}
+
+// --- Reviews ---
+
+export function listReviews(): Promise<ReviewResponse[]> {
+  return request("/api/reviews");
+}
+
+export function getReview(id: string): Promise<ReviewResponse> {
+  return request(`/api/reviews/${id}`);
+}
+
+export function createReview(req: CreateReviewRequest): Promise<ReviewResponse> {
+  return request("/api/reviews", {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
+}
+
+export function updateReviewStatus(id: string, req: UpdateReviewStatusRequest): Promise<void> {
+  return request(`/api/reviews/${id}/status`, {
+    method: "PATCH",
+    body: JSON.stringify(req),
+  });
+}
+
+// --- Files ---
+
+export function listFiles(reviewId: string): Promise<FileListEntry[]> {
+  return request(`/api/reviews/${reviewId}/files`);
+}
+
+export function getFileDiff(reviewId: string, path: string): Promise<FileDiffResponse> {
+  return request(`/api/reviews/${reviewId}/files/${path}`);
+}
+
+// --- Threads ---
+
+export function listThreads(reviewId: string, filePath?: string): Promise<ThreadResponse[]> {
+  const params = filePath ? `?file=${encodeURIComponent(filePath)}` : "";
+  return request(`/api/reviews/${reviewId}/threads${params}`);
+}
+
+export function createThread(reviewId: string, req: CreateThreadRequest): Promise<ThreadResponse> {
+  return request(`/api/reviews/${reviewId}/threads`, {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
+}
+
+export function updateThreadStatus(threadId: string, req: UpdateThreadStatusRequest): Promise<void> {
+  return request(`/api/threads/${threadId}/status`, {
+    method: "PATCH",
+    body: JSON.stringify(req),
+  });
+}
+
+// --- Comments ---
+
+export function addComment(threadId: string, req: AddCommentRequest): Promise<CommentResponse> {
+  return request(`/api/threads/${threadId}/comments`, {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
+}
+
+// --- Health ---
+
+export async function healthCheck(): Promise<string> {
+  const res = await fetch("/api/health");
+  return res.text();
+}
