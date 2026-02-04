@@ -114,6 +114,9 @@
             onThreadCreated={(threadId) => {
               highlightThreadId = threadId;
               if (selectedFile) loadThreads(selectedFile);
+              setTimeout(() => {
+                highlightThreadId = null;
+              }, 1000);
             }}
           />
         {:else}
@@ -127,7 +130,6 @@
       {#if threadsPanelOpen}
         <aside class="w-80 border-l border-border overflow-y-auto shrink-0">
           <ThreadPanel
-            {reviewId}
             {threads}
             {highlightThreadId}
             onThreadsChanged={() => {

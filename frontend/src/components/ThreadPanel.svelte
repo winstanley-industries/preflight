@@ -3,7 +3,6 @@
   import type { ThreadResponse, ThreadOrigin } from "../lib/types";
 
   interface Props {
-    reviewId: string;
     threads: ThreadResponse[];
     highlightThreadId: string | null;
     onThreadsChanged: () => void;
