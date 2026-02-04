@@ -83,6 +83,23 @@
     onThreadCreated?.(threadId);
   }
 
+  // Lines changed in the diff, for highlighting in file view
+  let changedLines = $derived(
+    new Set(
+      diff?.hunks.flatMap((hunk) =>
+        hunk.lines
+          .filter((line) =>
+            fileVersion === "new"
+              ? line.kind === "Added" && line.new_line_no !== null
+              : line.kind === "Removed" && line.old_line_no !== null,
+          )
+          .map((line) =>
+            fileVersion === "new" ? line.new_line_no! : line.old_line_no!,
+          ),
+      ) ?? [],
+    ),
+  );
+
   // Compute where the form should appear (after the last selected line)
   let formLineNo = $derived(
     selectionStart !== null
@@ -314,6 +331,10 @@
         {@const hasThread = threadLines.has(line.line_no)}
         <div
           class="group flex hover:brightness-125 transition-[filter]"
+          class:bg-diff-add-bg={fileVersion === "new" &&
+            changedLines.has(line.line_no)}
+          class:bg-diff-remove-bg={fileVersion === "old" &&
+            changedLines.has(line.line_no)}
           id={`L${line.line_no}`}
         >
           <span
