@@ -1,12 +1,16 @@
+use std::sync::Arc;
+
 use axum::{
     Router,
     http::{StatusCode, header},
     response::{Html, IntoResponse, Response},
     routing::get,
 };
+use preflight_core::store::ReviewStore;
 use rust_embed::RustEmbed;
 
 pub mod error;
+pub mod routes;
 pub mod state;
 pub mod types;
 
@@ -14,10 +18,13 @@ pub mod types;
 #[folder = "../../frontend/dist"]
 struct Assets;
 
-pub fn app() -> Router {
+pub fn app(store: Arc<dyn ReviewStore>) -> Router {
+    let state = state::AppState { store };
     Router::new()
         .route("/api/health", get(health))
+        .nest("/api/reviews", routes::reviews::router())
         .fallback(static_handler)
+        .with_state(state)
 }
 
 async fn health() -> &'static str {
@@ -55,8 +62,13 @@ async fn static_handler(uri: axum::http::Uri) -> Response {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_app_builds() {
-        let _app = app();
+    #[tokio::test]
+    async fn test_app_builds() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("state.json");
+        let store = preflight_core::json_store::JsonFileStore::new(&path)
+            .await
+            .unwrap();
+        let _app = app(std::sync::Arc::new(store));
     }
 }
