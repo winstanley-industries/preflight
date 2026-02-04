@@ -8,7 +8,7 @@
     onThreadsChanged: () => void;
   }
 
-  let { reviewId: _reviewId, threads, onThreadsChanged }: Props = $props();
+  let { threads, onThreadsChanged }: Props = $props();
 
   let replyTexts = $state<Record<string, string>>({});
   let submitting = $state<Record<string, boolean>>({});

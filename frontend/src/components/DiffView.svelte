@@ -53,9 +53,11 @@
   </div>
 {:else if diff}
   <div class="font-mono text-sm">
-    {#each diff.hunks as hunk}
+    {#each diff.hunks as hunk, hunkIdx (hunkIdx)}
       <!-- Hunk header -->
-      <div class="px-4 py-1 text-text-faint bg-bg-surface text-xs select-none border-y border-border">
+      <div
+        class="px-4 py-1 text-text-faint bg-bg-surface text-xs select-none border-y border-border"
+      >
         @@ -{hunk.old_start},{hunk.old_count} +{hunk.new_start},{hunk.new_count} @@
         {#if hunk.context}
           <span class="ml-2">{hunk.context}</span>
@@ -63,7 +65,7 @@
       </div>
 
       <!-- Diff lines -->
-      {#each hunk.lines as line}
+      {#each hunk.lines as line, lineIdx (lineIdx)}
         <div
           class="flex hover:brightness-125 transition-[filter]"
           class:bg-diff-add-bg={line.kind === "Added"}
@@ -71,11 +73,15 @@
           id={line.new_line_no ? `L${line.new_line_no}` : undefined}
         >
           <!-- Gutter: old line number -->
-          <span class="w-12 shrink-0 text-right pr-2 select-none text-text-faint text-xs leading-6">
+          <span
+            class="w-12 shrink-0 text-right pr-2 select-none text-text-faint text-xs leading-6"
+          >
             {line.old_line_no ?? ""}
           </span>
           <!-- Gutter: new line number -->
-          <span class="w-12 shrink-0 text-right pr-2 select-none text-text-faint text-xs leading-6">
+          <span
+            class="w-12 shrink-0 text-right pr-2 select-none text-text-faint text-xs leading-6"
+          >
             {line.new_line_no ?? ""}
           </span>
           <!-- Thread indicator -->
