@@ -5,10 +5,18 @@
   interface Props {
     threads: ThreadResponse[];
     highlightThreadId: string | null;
+    diffLines: Set<number>;
     onThreadsChanged: () => void;
+    onNavigateToThread: (lineStart: number) => void;
   }
 
-  let { threads, highlightThreadId, onThreadsChanged }: Props = $props();
+  let {
+    threads,
+    highlightThreadId,
+    diffLines,
+    onThreadsChanged,
+    onNavigateToThread,
+  }: Props = $props();
 
   $effect(() => {
     if (highlightThreadId) {
@@ -47,9 +55,11 @@
     }
   }
 
-  function scrollToLine(lineStart: number) {
-    const el = document.getElementById(`L${lineStart}`);
-    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+  function isThreadInDiff(thread: ThreadResponse): boolean {
+    for (let i = thread.line_start; i <= thread.line_end; i++) {
+      if (diffLines.has(i)) return true;
+    }
+    return false;
   }
 </script>
 
@@ -69,10 +79,18 @@
           <!-- Thread header -->
           <div class="flex items-center justify-between gap-2 mb-2">
             <button
-              class="text-xs text-accent hover:underline cursor-pointer"
-              onclick={() => scrollToLine(thread.line_start)}
+              class="text-xs hover:underline cursor-pointer {isThreadInDiff(
+                thread,
+              )
+                ? 'text-accent'
+                : 'text-text-muted'}"
+              title={isThreadInDiff(thread)
+                ? undefined
+                : "Opens full file view"}
+              onclick={() => onNavigateToThread(thread.line_start)}
             >
-              Lines {thread.line_start}&ndash;{thread.line_end}
+              {#if !isThreadInDiff(thread)}<span class="mr-0.5">&rarr;</span
+                >{/if}Lines {thread.line_start}&ndash;{thread.line_end}
             </button>
             <div class="flex items-center gap-2">
               <span

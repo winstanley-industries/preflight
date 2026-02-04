@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from "svelte";
   import { getFileDiff, getFileContent } from "../lib/api";
   import type {
     FileDiffResponse,
@@ -14,7 +15,9 @@
     threads: ThreadResponse[];
     fileStatus: FileStatus;
     hasRepoPath: boolean;
+    navigateToLine?: number | null;
     onThreadCreated?: (threadId: string) => void;
+    onDiffLinesKnown?: (lines: Set<number>) => void;
   }
 
   let {
@@ -23,7 +26,9 @@
     threads,
     fileStatus,
     hasRepoPath,
+    navigateToLine = null,
     onThreadCreated,
+    onDiffLinesKnown,
   }: Props = $props();
 
   let diff = $state<FileDiffResponse | null>(null);
@@ -141,6 +146,54 @@
 
   $effect(() => {
     loadDiff(reviewId, filePath);
+  });
+
+  // Set of all new-side line numbers present in the diff
+  let diffLineNumbers = $derived(
+    new Set(
+      diff?.hunks.flatMap((hunk) =>
+        hunk.lines
+          .filter((line) => line.new_line_no !== null)
+          .map((line) => line.new_line_no!),
+      ) ?? [],
+    ),
+  );
+
+  // Report diff line numbers to parent when they change
+  $effect(() => {
+    if (diff) {
+      onDiffLinesKnown?.(diffLineNumbers);
+    }
+  });
+
+  // Navigate to a specific line when requested
+  $effect(() => {
+    if (navigateToLine == null) return;
+    const target = navigateToLine;
+
+    if (diffLineNumbers.has(target)) {
+      // Line is in the diff — scroll to it
+      requestAnimationFrame(() => {
+        const el = document.getElementById(`L${target}`);
+        el?.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
+    } else if (hasRepoPath) {
+      // Line is outside the diff — switch to file view
+      viewMode = "file";
+      if (!fileContent || fileVersion !== "new") {
+        fileVersion = "new";
+        loadFileContent(reviewId, filePath, "new").then(async () => {
+          await tick();
+          const el = document.getElementById(`L${target}`);
+          el?.scrollIntoView({ behavior: "smooth", block: "center" });
+        });
+      } else {
+        tick().then(() => {
+          const el = document.getElementById(`L${target}`);
+          el?.scrollIntoView({ behavior: "smooth", block: "center" });
+        });
+      }
+    }
   });
 </script>
 

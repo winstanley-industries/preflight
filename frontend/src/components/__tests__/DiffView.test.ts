@@ -219,7 +219,13 @@ describe("DiffView", () => {
     };
     mockGetFileDiff.mockResolvedValueOnce(highlightedFixture);
     render(DiffView, {
-      props: { reviewId: "rev-1", filePath: "src/main.ts", fileStatus: "Modified" as const, hasRepoPath: true, threads: [] },
+      props: {
+        reviewId: "rev-1",
+        filePath: "src/main.ts",
+        fileStatus: "Modified" as const,
+        hasRepoPath: true,
+        threads: [],
+      },
     });
     await screen.findByText("const", { selector: ".sy-keyword" });
   });
