@@ -6,6 +6,10 @@ use axum::{
 };
 use rust_embed::RustEmbed;
 
+pub mod error;
+pub mod state;
+pub mod types;
+
 #[derive(RustEmbed)]
 #[folder = "../../frontend/dist"]
 struct Assets;
