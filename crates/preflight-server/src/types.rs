@@ -10,6 +10,8 @@ use uuid::Uuid;
 pub struct CreateReviewRequest {
     pub title: Option<String>,
     pub diff: String,
+    pub repo_path: Option<String>,
+    pub base_ref: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -47,6 +49,7 @@ pub struct ReviewResponse {
     pub status: ReviewStatus,
     pub file_count: usize,
     pub thread_count: usize,
+    pub has_repo_path: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
