@@ -9,6 +9,7 @@ preflight-core = { path = "../preflight-core" }
 preflight-mcp = { path = "../preflight-mcp" }
 async-trait = { workspace = true }
 clap = { workspace = true }
+rmcp = { workspace = true }
 axum = "0.8.8"
 chrono = { workspace = true }
 mime_guess = "2.0.5"
