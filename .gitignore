@@ -14,5 +14,8 @@ frontend/dist/
 *.swp
 *.swo
 
+# Worktrees
+.worktrees/
+
 # OS
 .DS_Store

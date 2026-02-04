@@ -31,6 +31,17 @@ Individual checks:
 - `just rust-fmt` / `just rust-clippy` / `just rust-test`
 - `just frontend-fmt` / `just frontend-lint` / `just frontend-check` / `just frontend-build`
 
+## Worktrees
+
+Use `.worktrees/` for isolated feature work:
+
+- `just worktree-add <branch>` — Create a new worktree with a feature branch
+- `just worktree-list` — List all worktrees
+- `just worktree-remove <branch>` — Remove a worktree and delete its branch
+- `just worktree-clean` — Remove all worktrees
+
+Worktree directory: `.worktrees/` (project-local, gitignored).
+
 ## Rules
 
 - Before adding any dependency, verify the latest version:
