@@ -1,21 +1,13 @@
 <script lang="ts">
-  let status = $state("checking...");
+  import { getRoute } from "./lib/router.svelte";
+  import ReviewList from "./components/ReviewList.svelte";
+  import ReviewView from "./components/ReviewView.svelte";
 
-  async function checkHealth() {
-    try {
-      const res = await fetch("/api/health");
-      status = res.ok ? "connected" : `error: ${res.status}`;
-    } catch {
-      status = "disconnected";
-    }
-  }
-
-  $effect(() => {
-    checkHealth();
-  });
+  const route = $derived(getRoute());
 </script>
 
-<main>
-  <h1>hello preflight</h1>
-  <p>backend: {status}</p>
-</main>
+{#if route.page === "review" && route.reviewId}
+  <ReviewView reviewId={route.reviewId} />
+{:else}
+  <ReviewList />
+{/if}
