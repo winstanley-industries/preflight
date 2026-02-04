@@ -24,6 +24,8 @@ pub struct DiffLine {
     pub content: String,
     pub old_line_no: Option<u32>,
     pub new_line_no: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub highlighted: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
