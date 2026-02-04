@@ -29,6 +29,18 @@
   --color-badge-deleted: #fca5a5;
   --color-badge-renamed: #93c5fd;
   --color-badge-binary: #78716c;
+
+  --color-syn-keyword: #cc99cc;
+  --color-syn-string: #99cc99;
+  --color-syn-comment: #747369;
+  --color-syn-number: #f99157;
+  --color-syn-function: #6699cc;
+  --color-syn-type: #ffcc66;
+  --color-syn-variable: #f2777a;
+  --color-syn-constant: #f99157;
+  --color-syn-punctuation: #d3d0c8;
+  --color-syn-operator: #d3d0c8;
+  --color-syn-tag: #f2777a;
 }
 
 @layer base {
@@ -38,3 +50,16 @@
     min-height: 100vh;
   }
 }
+
+/* Syntax highlighting token classes (syntect output with sy- prefix) */
+[class*="sy-keyword"] { color: var(--color-syn-keyword); }
+[class*="sy-storage"] { color: var(--color-syn-keyword); }
+[class*="sy-string"] { color: var(--color-syn-string); }
+[class*="sy-comment"] { color: var(--color-syn-comment); font-style: italic; }
+[class*="sy-constant"] { color: var(--color-syn-constant); }
+[class*="sy-entity sy-name sy-function"] { color: var(--color-syn-function); }
+[class*="sy-entity sy-name sy-type"],
+[class*="sy-support sy-type"] { color: var(--color-syn-type); }
+[class*="sy-variable"] { color: var(--color-syn-variable); }
+[class*="sy-punctuation"] { color: var(--color-syn-punctuation); }
+[class*="sy-entity sy-name sy-tag"] { color: var(--color-syn-tag); }
