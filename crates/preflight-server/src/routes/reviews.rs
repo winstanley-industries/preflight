@@ -28,6 +28,8 @@ async fn create_review(
         .create_review(CreateReviewInput {
             title: request.title,
             files,
+            repo_path: None,
+            base_ref: None,
         })
         .await?;
     Ok(Json(ReviewResponse {

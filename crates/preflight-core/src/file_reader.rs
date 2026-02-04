@@ -32,8 +32,17 @@ pub fn validate_repo_path(repo_path: &Path) -> Result<(), FileReadError> {
     }
 }
 
+/// Validate that a file path is safe (no traversal or absolute paths).
+fn validate_file_path(file_path: &str) -> Result<(), FileReadError> {
+    if file_path.starts_with('/') || file_path.contains("..") {
+        return Err(FileReadError::FileNotFound(file_path.to_string()));
+    }
+    Ok(())
+}
+
 /// Read the current (new) version of a file from the working directory.
 pub fn read_new_file(repo_path: &Path, file_path: &str) -> Result<String, FileReadError> {
+    validate_file_path(file_path)?;
     let full_path = repo_path.join(file_path);
     std::fs::read_to_string(&full_path).map_err(|e| match e.kind() {
         std::io::ErrorKind::NotFound => FileReadError::FileNotFound(file_path.to_string()),
@@ -47,6 +56,7 @@ pub fn read_old_file(
     file_path: &str,
     base_ref: &str,
 ) -> Result<String, FileReadError> {
+    validate_file_path(file_path)?;
     let output = std::process::Command::new("git")
         .args([
             "-C",
@@ -165,5 +175,19 @@ mod tests {
             validate_repo_path(dir.path()),
             Err(FileReadError::NotAGitRepo)
         ));
+    }
+
+    #[test]
+    fn read_new_file_rejects_path_traversal() {
+        let dir = setup_git_repo();
+        let result = read_new_file(dir.path(), "../../../etc/passwd");
+        assert!(matches!(result, Err(FileReadError::FileNotFound(_))));
+    }
+
+    #[test]
+    fn read_new_file_rejects_absolute_path() {
+        let dir = setup_git_repo();
+        let result = read_new_file(dir.path(), "/etc/passwd");
+        assert!(matches!(result, Err(FileReadError::FileNotFound(_))));
     }
 }

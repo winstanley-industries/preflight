@@ -41,6 +41,10 @@ pub struct Review {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub files: Vec<FileDiff>,
+    #[serde(default)]
+    pub repo_path: Option<String>,
+    #[serde(default)]
+    pub base_ref: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
