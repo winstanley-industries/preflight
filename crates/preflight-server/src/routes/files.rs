@@ -2,14 +2,21 @@ use std::collections::BTreeMap;
 
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Path, Query, State},
 };
+use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::error::ApiError;
 use crate::state::AppState;
 use crate::types::{FileContentLine, FileContentResponse, FileDiffResponse, FileListEntry};
 use preflight_core::diff::{DiffLine, Hunk, LineKind};
+use preflight_core::file_reader;
+
+#[derive(Debug, Deserialize)]
+struct ContentQuery {
+    version: Option<String>,
+}
 
 pub fn router() -> axum::Router<AppState> {
     use axum::routing::get;
@@ -122,29 +129,51 @@ async fn get_file_diff(
 async fn get_file_content(
     State(state): State<AppState>,
     Path((id, file_path)): Path<(Uuid, String)>,
+    Query(query): Query<ContentQuery>,
 ) -> Result<Json<FileContentResponse>, ApiError> {
     let review = state.store.get_review(id).await?;
-    let file_diff = review
-        .files
-        .iter()
-        .find(|f| {
-            let effective_path = f
-                .new_path
-                .as_deref()
-                .or(f.old_path.as_deref())
-                .unwrap_or_default();
-            effective_path == file_path
-        })
-        .ok_or_else(|| ApiError::NotFound(format!("file not found: {file_path}")))?;
 
-    let path = file_diff
-        .new_path
-        .clone()
-        .unwrap_or_else(|| file_diff.old_path.clone().unwrap_or_default());
+    let repo_path_str = review
+        .repo_path
+        .as_deref()
+        .ok_or_else(|| ApiError::BadRequest("review has no repo_path".to_string()))?;
 
-    // Reconstruct the new file content from all hunks
-    let (_, new_content) = reconstruct_file_contents(&file_diff.hunks);
-    let highlighted_lines = state.highlighter.highlight_file(&new_content, &path);
+    let repo_path = std::path::Path::new(repo_path_str);
+    file_reader::validate_repo_path(repo_path).map_err(|e| ApiError::BadRequest(e.to_string()))?;
+
+    let version = query.version.as_deref().unwrap_or("new");
+
+    let (content, path) = match version {
+        "old" => {
+            let base_ref = review.base_ref.as_deref().unwrap_or("HEAD");
+
+            // Check if this is a rename — use the old_path if available
+            let read_path = review
+                .files
+                .iter()
+                .find(|f| {
+                    let effective = f
+                        .new_path
+                        .as_deref()
+                        .or(f.old_path.as_deref())
+                        .unwrap_or_default();
+                    effective == file_path
+                })
+                .and_then(|f| f.old_path.as_deref())
+                .unwrap_or(&file_path);
+
+            let content = file_reader::read_old_file(repo_path, read_path, base_ref)
+                .map_err(|e| ApiError::NotFound(e.to_string()))?;
+            (content, read_path.to_string())
+        }
+        _ => {
+            let content = file_reader::read_new_file(repo_path, &file_path)
+                .map_err(|e| ApiError::NotFound(e.to_string()))?;
+            (content, file_path)
+        }
+    };
+
+    let highlighted_lines = state.highlighter.highlight_file(&content, &path);
 
     let ext = std::path::Path::new(&path)
         .extension()
@@ -152,12 +181,12 @@ async fn get_file_content(
         .unwrap_or("");
     let language = state.highlighter.language_name(ext).map(|s| s.to_string());
 
-    let lines: Vec<FileContentLine> = new_content
+    let lines: Vec<FileContentLine> = content
         .lines()
         .enumerate()
-        .map(|(i, content)| FileContentLine {
+        .map(|(i, line_content)| FileContentLine {
             line_no: (i + 1) as u32,
-            content: content.to_string(),
+            content: line_content.to_string(),
             highlighted: highlighted_lines.as_ref().and_then(|hl| hl.get(i).cloned()),
         })
         .collect();
@@ -349,5 +378,149 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    /// Helper: create a temp git repo, return its path and a diff string.
+    fn setup_test_repo() -> (tempfile::TempDir, String) {
+        use std::process::Command;
+
+        let dir = tempfile::TempDir::new().unwrap();
+        let p = dir.path();
+
+        Command::new("git")
+            .args(["init"])
+            .current_dir(p)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.email", "t@t.com"])
+            .current_dir(p)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.name", "T"])
+            .current_dir(p)
+            .output()
+            .unwrap();
+
+        std::fs::create_dir_all(p.join("src")).unwrap();
+        std::fs::write(p.join("src/main.rs"), "fn main() {}\n").unwrap();
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(p)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "init"])
+            .current_dir(p)
+            .output()
+            .unwrap();
+
+        // Modify the file
+        std::fs::write(
+            p.join("src/main.rs"),
+            "use std::io;\n\nfn main() {\n    println!(\"hello\");\n}\n",
+        )
+        .unwrap();
+
+        // Generate a diff
+        let output = Command::new("git")
+            .args(["diff"])
+            .current_dir(p)
+            .output()
+            .unwrap();
+        let diff = String::from_utf8(output.stdout).unwrap();
+
+        (dir, diff)
+    }
+
+    /// Helper: create a review with repo_path pointing to a test repo.
+    async fn create_review_with_repo(app: &axum::Router, repo_path: &str, diff: &str) -> String {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/reviews")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "title": "Repo review",
+                            "diff": diff,
+                            "repo_path": repo_path,
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let json = body_json(response).await;
+        json["id"].as_str().unwrap().to_string()
+    }
+
+    #[tokio::test]
+    async fn test_get_file_content_new_version_from_disk() {
+        let app = test_app().await;
+        let (repo_dir, diff) = setup_test_repo();
+        let id = create_review_with_repo(&app, repo_dir.path().to_str().unwrap(), &diff).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/reviews/{id}/content/src/main.rs"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let json = body_json(response).await;
+        let lines = json["lines"].as_array().unwrap();
+        assert_eq!(lines.len(), 5); // 5 lines in the new file
+        assert_eq!(lines[0]["content"], "use std::io;");
+    }
+
+    #[tokio::test]
+    async fn test_get_file_content_old_version_from_git() {
+        let app = test_app().await;
+        let (repo_dir, diff) = setup_test_repo();
+        let id = create_review_with_repo(&app, repo_dir.path().to_str().unwrap(), &diff).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/reviews/{id}/content/src/main.rs?version=old"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let json = body_json(response).await;
+        let lines = json["lines"].as_array().unwrap();
+        assert_eq!(lines.len(), 1); // original file was 1 line
+        assert_eq!(lines[0]["content"], "fn main() {}");
+    }
+
+    #[tokio::test]
+    async fn test_get_file_content_no_repo_path_returns_error() {
+        let app = test_app().await;
+        let id = create_review_with_diff(&app).await; // no repo_path
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/reviews/{id}/content/src/main.rs"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 }
