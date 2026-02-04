@@ -13,6 +13,13 @@ impl Highlighter {
         }
     }
 
+    /// Get the display name of a language by file extension.
+    pub fn language_name(&self, ext: &str) -> Option<&str> {
+        self.syntax_set
+            .find_syntax_by_extension(ext)
+            .map(|s| s.name.as_str())
+    }
+
     /// Highlight a file's content, returning one HTML string per line.
     /// Returns `None` if the language is not recognized.
     /// Each line contains `<span class="sy-...">` elements with CSS classes.
@@ -46,6 +53,14 @@ mod tests {
 
     fn highlighter() -> Highlighter {
         Highlighter::new()
+    }
+
+    #[test]
+    fn language_name_works() {
+        let hl = highlighter();
+        assert_eq!(hl.language_name("rs"), Some("Rust"));
+        assert_eq!(hl.language_name("js"), Some("JavaScript"));
+        assert_eq!(hl.language_name("xyz123"), None);
     }
 
     #[test]

@@ -66,6 +66,21 @@ pub struct FileDiffResponse {
 }
 
 #[derive(Debug, Serialize)]
+pub struct FileContentLine {
+    pub line_no: u32,
+    pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub highlighted: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct FileContentResponse {
+    pub path: String,
+    pub language: Option<String>,
+    pub lines: Vec<FileContentLine>,
+}
+
+#[derive(Debug, Serialize)]
 pub struct ThreadResponse {
     pub id: Uuid,
     pub review_id: Uuid,

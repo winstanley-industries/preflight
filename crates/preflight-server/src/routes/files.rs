@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use crate::error::ApiError;
 use crate::state::AppState;
-use crate::types::{FileDiffResponse, FileListEntry};
+use crate::types::{FileContentLine, FileContentResponse, FileDiffResponse, FileListEntry};
 use preflight_core::diff::{DiffLine, Hunk, LineKind};
 
 pub fn router() -> axum::Router<AppState> {
@@ -16,6 +16,11 @@ pub fn router() -> axum::Router<AppState> {
     axum::Router::new()
         .route("/{id}/files", get(list_files))
         .route("/{id}/files/{*path}", get(get_file_diff))
+}
+
+pub fn content_router() -> axum::Router<AppState> {
+    use axum::routing::get;
+    axum::Router::new().route("/{id}/content/{*path}", get(get_file_content))
 }
 
 async fn list_files(
@@ -113,6 +118,61 @@ async fn get_file_diff(
         old_path: file_diff.old_path.clone(),
         status: file_diff.status.clone(),
         hunks,
+    }))
+}
+
+async fn get_file_content(
+    State(state): State<AppState>,
+    Path((id, file_path)): Path<(Uuid, String)>,
+) -> Result<Json<FileContentResponse>, ApiError> {
+    let review = state.store.get_review(id).await?;
+    let file_diff = review
+        .files
+        .iter()
+        .find(|f| {
+            let effective_path = f
+                .new_path
+                .as_deref()
+                .or(f.old_path.as_deref())
+                .unwrap_or_default();
+            effective_path == file_path
+        })
+        .ok_or_else(|| ApiError::NotFound(format!("file not found: {file_path}")))?;
+
+    let path = file_diff
+        .new_path
+        .clone()
+        .unwrap_or_else(|| file_diff.old_path.clone().unwrap_or_default());
+
+    // Reconstruct the new file content from all hunks
+    let (_, new_content) = reconstruct_file_contents(&file_diff.hunks);
+    let highlighted_lines = state.highlighter.highlight_file(&new_content, &path);
+
+    let ext = std::path::Path::new(&path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
+    let language = state
+        .highlighter
+        .language_name(ext)
+        .map(|s| s.to_string());
+
+    let lines: Vec<FileContentLine> = new_content
+        .lines()
+        .enumerate()
+        .map(|(i, content)| FileContentLine {
+            line_no: (i + 1) as u32,
+            content: content.to_string(),
+            highlighted: highlighted_lines
+                .as_ref()
+                .and_then(|hl| hl.get(i).cloned()),
+        })
+        .collect();
+
+    Ok(Json(FileContentResponse {
+        path,
+        language,
+        lines,
     }))
 }
 
