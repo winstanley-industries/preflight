@@ -19,12 +19,18 @@
   let submitting = $state(false);
   let error = $state<string | null>(null);
 
-  let inputEl: HTMLInputElement | undefined = $state();
+  let inputEl: HTMLTextAreaElement | undefined = $state();
 
   const lineLabel = $derived(
     lineStart === lineEnd
       ? `Line ${lineStart}`
       : `Lines ${lineStart}\u2013${lineEnd}`,
+  );
+
+  const placeholder = $derived(
+    origin === "ExplanationRequest"
+      ? "What should be explained?"
+      : "Add a comment...",
   );
 
   $effect(() => {
@@ -57,7 +63,7 @@
     if (e.key === "Escape") {
       e.preventDefault();
       onCancel();
-    } else if (e.key === "Enter" && !e.shiftKey) {
+    } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
       submit();
     }
@@ -88,28 +94,31 @@
       </button>
     </div>
   </div>
-  <div class="flex gap-2">
-    <input
+  <div>
+    <textarea
       bind:this={inputEl}
-      type="text"
-      class="flex-1 text-sm bg-bg border border-border rounded px-2 py-1 text-text placeholder:text-text-faint focus:outline-none focus:border-accent"
-      placeholder="Add a comment..."
+      class="w-full text-sm bg-bg border border-border rounded px-2 py-1.5 text-text placeholder:text-text-faint focus:outline-none focus:border-accent resize-y"
+      {placeholder}
+      rows={3}
       bind:value={body}
       onkeydown={handleKeydown}
-    />
-    <button
-      class="text-sm px-3 py-1 bg-accent text-bg rounded font-medium cursor-pointer transition-colors hover:bg-accent/80 disabled:opacity-50 disabled:cursor-not-allowed"
-      disabled={submitting || !body.trim()}
-      onclick={submit}
-    >
-      Submit
-    </button>
-    <button
-      class="text-sm px-2 py-1 bg-bg-hover text-text-muted rounded cursor-pointer transition-colors hover:text-text"
-      onclick={onCancel}
-    >
-      Cancel
-    </button>
+    ></textarea>
+    <div class="flex items-center gap-2 mt-1.5">
+      <button
+        class="text-sm px-3 py-1 bg-accent text-bg rounded font-medium cursor-pointer transition-colors hover:bg-accent/80 disabled:opacity-50 disabled:cursor-not-allowed"
+        disabled={submitting || !body.trim()}
+        onclick={submit}
+      >
+        Submit
+      </button>
+      <button
+        class="text-sm px-2 py-1 bg-bg-hover text-text-muted rounded cursor-pointer transition-colors hover:text-text"
+        onclick={onCancel}
+      >
+        Cancel
+      </button>
+      <span class="text-xs text-text-faint ml-auto">⌘Enter to submit</span>
+    </div>
   </div>
   {#if error}
     <p class="text-xs text-badge-deleted mt-1">{error}</p>

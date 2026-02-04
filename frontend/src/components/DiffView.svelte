@@ -139,19 +139,24 @@
             {line.new_line_no ?? ""}
           </span>
           <!-- Thread indicator / add button -->
-          <span class="w-6 shrink-0 text-center select-none leading-6">
-            {#if hasThread}
-              <span class="text-accent text-xs">&bull;</span>
-            {:else if commentable}
-              <button
-                class="text-accent text-xs opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-                onclick={(e: MouseEvent) =>
-                  handleGutterClick(line.new_line_no!, e)}
-              >
-                +
-              </button>
-            {/if}
-          </span>
+          {#if commentable}
+            <button
+              class="w-6 shrink-0 text-center select-none leading-6 cursor-pointer"
+              onclick={(e: MouseEvent) =>
+                handleGutterClick(line.new_line_no!, e)}
+            >
+              {#if hasThread}
+                <span class="text-accent text-xs">&bull;</span>
+              {:else}
+                <span
+                  class="text-accent text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                  >+</span
+                >
+              {/if}
+            </button>
+          {:else}
+            <span class="w-6 shrink-0"></span>
+          {/if}
           <!-- Line content -->
           <span
             class="flex-1 px-2 whitespace-pre leading-6"
