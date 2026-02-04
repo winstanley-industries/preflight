@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { getFileDiff } from "../lib/api";
-  import type { FileDiffResponse, ThreadResponse } from "../lib/types";
+  import { getFileDiff, getFileContent } from "../lib/api";
+  import type { FileDiffResponse, FileContentResponse, ThreadResponse } from "../lib/types";
   import InlineCommentForm from "./InlineCommentForm.svelte";
 
   interface Props {
@@ -15,6 +15,10 @@
   let diff = $state<FileDiffResponse | null>(null);
   let error = $state<string | null>(null);
   let loading = $state(true);
+
+  let viewMode = $state<"diff" | "file">("diff");
+  let fileContent = $state<FileContentResponse | null>(null);
+  let fileLoading = $state(false);
 
   // Line selection state
   let selectionStart = $state<number | null>(null);
@@ -71,10 +75,23 @@
       : null,
   );
 
+  async function loadFileContent(rid: string, path: string) {
+    fileLoading = true;
+    try {
+      fileContent = await getFileContent(rid, path);
+    } catch {
+      fileContent = null;
+    } finally {
+      fileLoading = false;
+    }
+  }
+
   async function loadDiff(rid: string, path: string) {
     loading = true;
     error = null;
     closeForm();
+    viewMode = "diff";
+    fileContent = null;
     try {
       diff = await getFileDiff(rid, path);
     } catch (e: unknown) {
@@ -99,99 +116,144 @@
     <p class="text-badge-deleted text-sm">{error}</p>
   </div>
 {:else if diff}
-  <div class="font-mono text-sm">
-    {#each diff.hunks as hunk, hunkIdx (hunkIdx)}
-      <!-- Hunk header -->
-      <div
-        class="px-4 py-1 text-text-faint bg-bg-surface text-xs select-none border-y border-border"
-      >
-        @@ -{hunk.old_start},{hunk.old_count} +{hunk.new_start},{hunk.new_count}
-        @@
-        {#if hunk.context}
-          <span class="ml-2">{hunk.context}</span>
-        {/if}
-      </div>
+  <!-- View mode toggle -->
+  <div class="flex items-center gap-2 px-4 py-1.5 border-b border-border bg-bg-surface">
+    <button
+      class="text-xs px-2 py-0.5 rounded cursor-pointer {viewMode === 'diff' ? 'bg-bg-active text-text' : 'text-text-muted hover:text-text'}"
+      onclick={() => { viewMode = "diff"; }}
+    >Diff</button>
+    <button
+      class="text-xs px-2 py-0.5 rounded cursor-pointer {viewMode === 'file' ? 'bg-bg-active text-text' : 'text-text-muted hover:text-text'}"
+      onclick={() => {
+        viewMode = "file";
+        if (!fileContent) loadFileContent(reviewId, filePath);
+      }}
+    >File</button>
+  </div>
 
-      <!-- Diff lines -->
-      {#each hunk.lines as line, lineIdx (lineIdx)}
-        {@const commentable = line.new_line_no !== null}
-        {@const hasThread =
-          line.new_line_no !== null && threadLines.has(line.new_line_no)}
-        {@const selected = isLineSelected(line.new_line_no)}
+  {#if viewMode === "diff"}
+    <div class="font-mono text-sm">
+      {#each diff.hunks as hunk, hunkIdx (hunkIdx)}
+        <!-- Hunk header -->
         <div
-          class="group flex hover:brightness-125 transition-[filter] {selected
-            ? 'bg-accent/10'
-            : ''}"
-          class:bg-diff-add-bg={line.kind === "Added" && !selected}
-          class:bg-diff-remove-bg={line.kind === "Removed" && !selected}
-          id={line.new_line_no ? `L${line.new_line_no}` : undefined}
+          class="px-4 py-1 text-text-faint bg-bg-surface text-xs select-none border-y border-border"
         >
-          <!-- Gutter: old line number -->
-          <span
-            class="w-12 shrink-0 text-right pr-2 select-none text-text-faint text-xs leading-6"
-          >
-            {line.old_line_no ?? ""}
-          </span>
-          <!-- Gutter: new line number -->
-          <span
-            class="w-12 shrink-0 text-right pr-2 select-none text-text-faint text-xs leading-6"
-          >
-            {line.new_line_no ?? ""}
-          </span>
-          <!-- Thread indicator / add button -->
-          {#if commentable}
-            <button
-              class="w-6 shrink-0 text-center select-none leading-6 cursor-pointer"
-              onclick={(e: MouseEvent) =>
-                handleGutterClick(line.new_line_no!, e)}
-            >
-              {#if hasThread}
-                <span class="text-accent text-xs">&bull;</span>
-              {:else}
-                <span
-                  class="text-accent text-xs opacity-0 group-hover:opacity-100 transition-opacity"
-                  >+</span
-                >
-              {/if}
-            </button>
-          {:else}
-            <span class="w-6 shrink-0"></span>
-          {/if}
-          <!-- Line content -->
-          {#if line.highlighted}
-            <!-- eslint-disable svelte/no-at-html-tags -->
-            <span
-              class="flex-1 px-2 whitespace-pre leading-6"
-              class:text-diff-add-text={line.kind === "Added"}
-              class:text-diff-remove-text={line.kind === "Removed"}
-            >{@html line.highlighted}</span>
-            <!-- eslint-enable svelte/no-at-html-tags -->
-          {:else}
-            <span
-              class="flex-1 px-2 whitespace-pre leading-6"
-              class:text-diff-add-text={line.kind === "Added"}
-              class:text-diff-remove-text={line.kind === "Removed"}
-            >
-              {line.content}
-            </span>
+          @@ -{hunk.old_start},{hunk.old_count} +{hunk.new_start},{hunk.new_count}
+          @@
+          {#if hunk.context}
+            <span class="ml-2">{hunk.context}</span>
           {/if}
         </div>
 
-        <!-- Inline comment form (after the last selected line) -->
-        {#if formOpen && line.new_line_no === formLineNo}
-          <InlineCommentForm
-            {reviewId}
-            {filePath}
-            lineStart={Math.min(
-              selectionStart!,
-              selectionEnd ?? selectionStart!,
-            )}
-            lineEnd={Math.max(selectionStart!, selectionEnd ?? selectionStart!)}
-            onSubmit={handleThreadCreated}
-            onCancel={closeForm}
-          />
-        {/if}
+        <!-- Diff lines -->
+        {#each hunk.lines as line, lineIdx (lineIdx)}
+          {@const commentable = line.new_line_no !== null}
+          {@const hasThread =
+            line.new_line_no !== null && threadLines.has(line.new_line_no)}
+          {@const selected = isLineSelected(line.new_line_no)}
+          <div
+            class="group flex hover:brightness-125 transition-[filter] {selected
+              ? 'bg-accent/10'
+              : ''}"
+            class:bg-diff-add-bg={line.kind === "Added" && !selected}
+            class:bg-diff-remove-bg={line.kind === "Removed" && !selected}
+            id={line.new_line_no ? `L${line.new_line_no}` : undefined}
+          >
+            <!-- Gutter: old line number -->
+            <span
+              class="w-12 shrink-0 text-right pr-2 select-none text-text-faint text-xs leading-6"
+            >
+              {line.old_line_no ?? ""}
+            </span>
+            <!-- Gutter: new line number -->
+            <span
+              class="w-12 shrink-0 text-right pr-2 select-none text-text-faint text-xs leading-6"
+            >
+              {line.new_line_no ?? ""}
+            </span>
+            <!-- Thread indicator / add button -->
+            {#if commentable}
+              <button
+                class="w-6 shrink-0 text-center select-none leading-6 cursor-pointer"
+                onclick={(e: MouseEvent) =>
+                  handleGutterClick(line.new_line_no!, e)}
+              >
+                {#if hasThread}
+                  <span class="text-accent text-xs">&bull;</span>
+                {:else}
+                  <span
+                    class="text-accent text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                    >+</span
+                  >
+                {/if}
+              </button>
+            {:else}
+              <span class="w-6 shrink-0"></span>
+            {/if}
+            <!-- Line content -->
+            {#if line.highlighted}
+              <!-- eslint-disable svelte/no-at-html-tags -->
+              <span
+                class="flex-1 px-2 whitespace-pre leading-6"
+                class:text-diff-add-text={line.kind === "Added"}
+                class:text-diff-remove-text={line.kind === "Removed"}
+              >{@html line.highlighted}</span>
+              <!-- eslint-enable svelte/no-at-html-tags -->
+            {:else}
+              <span
+                class="flex-1 px-2 whitespace-pre leading-6"
+                class:text-diff-add-text={line.kind === "Added"}
+                class:text-diff-remove-text={line.kind === "Removed"}
+              >
+                {line.content}
+              </span>
+            {/if}
+          </div>
+
+          <!-- Inline comment form (after the last selected line) -->
+          {#if formOpen && line.new_line_no === formLineNo}
+            <InlineCommentForm
+              {reviewId}
+              {filePath}
+              lineStart={Math.min(
+                selectionStart!,
+                selectionEnd ?? selectionStart!,
+              )}
+              lineEnd={Math.max(selectionStart!, selectionEnd ?? selectionStart!)}
+              onSubmit={handleThreadCreated}
+              onCancel={closeForm}
+            />
+          {/if}
+        {/each}
       {/each}
-    {/each}
-  </div>
+    </div>
+  {:else if fileLoading}
+    <div class="p-4">
+      <p class="text-text-muted text-sm">Loading file...</p>
+    </div>
+  {:else if fileContent}
+    <div class="font-mono text-sm">
+      {#each fileContent.lines as line (line.line_no)}
+        {@const hasThread = threadLines.has(line.line_no)}
+        <div class="group flex hover:brightness-125 transition-[filter]"
+             id={`L${line.line_no}`}>
+          <span class="w-12 shrink-0 text-right pr-2 select-none text-text-faint text-xs leading-6">
+            {line.line_no}
+          </span>
+          <span class="w-6 shrink-0 text-center select-none leading-6">
+            {#if hasThread}
+              <span class="text-accent text-xs">&bull;</span>
+            {/if}
+          </span>
+          {#if line.highlighted}
+            <!-- eslint-disable svelte/no-at-html-tags -->
+            <span class="flex-1 px-2 whitespace-pre leading-6">{@html line.highlighted}</span>
+            <!-- eslint-enable svelte/no-at-html-tags -->
+          {:else}
+            <span class="flex-1 px-2 whitespace-pre leading-6">{line.content}</span>
+          {/if}
+        </div>
+      {/each}
+    </div>
+  {/if}
 {/if}

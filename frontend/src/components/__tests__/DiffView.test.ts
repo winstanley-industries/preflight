@@ -6,6 +6,7 @@ import DiffView from "../DiffView.svelte";
 
 vi.mock("../../lib/api", () => ({
   getFileDiff: vi.fn(),
+  getFileContent: vi.fn(),
   createThread: vi.fn(),
 }));
 
@@ -127,9 +128,9 @@ describe("DiffView", () => {
     // Lines with new_line_no get a button; count them
     // Context line 1, Added lines 2 & 3, Context line 4, Context line 11 = 5 commentable
     // Removed line (old_line_no=2, new_line_no=null) should NOT have a button
+    // +2 for the Diff/File toggle buttons at the top
     const buttons = screen.getAllByRole("button");
-    // Each commentable line has a gutter button
-    expect(buttons.length).toBe(5);
+    expect(buttons.length).toBe(7);
   });
 
   it("no + on removed-only lines (null new_line_no)", async () => {
@@ -146,7 +147,8 @@ describe("DiffView", () => {
     await renderDiff();
     const buttons = screen.getAllByRole("button");
     // Click the first commentable line's gutter button (line 1)
-    await user.click(buttons[0]);
+    // buttons[0] and buttons[1] are the Diff/File toggle buttons
+    await user.click(buttons[2]);
     // The inline form should appear with a textarea
     expect(screen.getByPlaceholderText("Add a comment...")).toBeInTheDocument();
   });
@@ -155,11 +157,11 @@ describe("DiffView", () => {
     const user = userEvent.setup();
     await renderDiff();
     const buttons = screen.getAllByRole("button");
-    // Click line 2 (second button, first Added line)
-    await user.click(buttons[1]);
-    // Shift-click line 3 (third button, second Added line)
+    // Click line 2 (buttons[3] after 2 toggle buttons, first Added line)
+    await user.click(buttons[3]);
+    // Shift-click line 3 (buttons[4], second Added line)
     await user.keyboard("{Shift>}");
-    await user.click(buttons[2]);
+    await user.click(buttons[4]);
     await user.keyboard("{/Shift}");
     // Form should show "Lines 2–3"
     expect(screen.getByText("Lines 2\u20133")).toBeInTheDocument();
@@ -169,7 +171,8 @@ describe("DiffView", () => {
     const user = userEvent.setup();
     await renderDiff();
     const buttons = screen.getAllByRole("button");
-    await user.click(buttons[0]);
+    // buttons[2] is the first gutter button (after 2 toggle buttons)
+    await user.click(buttons[2]);
     // Form is open
     expect(screen.getByPlaceholderText("Add a comment...")).toBeInTheDocument();
     // Press Escape
@@ -237,7 +240,8 @@ describe("DiffView", () => {
     });
     await renderDiff([], { onThreadCreated });
     const buttons = screen.getAllByRole("button");
-    await user.click(buttons[0]);
+    // buttons[2] is the first gutter button (after 2 toggle buttons)
+    await user.click(buttons[2]);
     await user.type(screen.getByRole("textbox"), "Nice change");
     await user.click(screen.getByRole("button", { name: "Submit" }));
     expect(onThreadCreated).toHaveBeenCalledWith("thread-new");
