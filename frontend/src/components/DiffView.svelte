@@ -3,6 +3,7 @@
   import type {
     FileDiffResponse,
     FileContentResponse,
+    FileStatus,
     ThreadResponse,
   } from "../lib/types";
   import InlineCommentForm from "./InlineCommentForm.svelte";
@@ -11,10 +12,19 @@
     reviewId: string;
     filePath: string;
     threads: ThreadResponse[];
+    fileStatus: FileStatus;
+    hasRepoPath: boolean;
     onThreadCreated?: (threadId: string) => void;
   }
 
-  let { reviewId, filePath, threads, onThreadCreated }: Props = $props();
+  let {
+    reviewId,
+    filePath,
+    threads,
+    fileStatus,
+    hasRepoPath,
+    onThreadCreated,
+  }: Props = $props();
 
   let diff = $state<FileDiffResponse | null>(null);
   let error = $state<string | null>(null);
@@ -23,6 +33,7 @@
   let viewMode = $state<"diff" | "file">("diff");
   let fileContent = $state<FileContentResponse | null>(null);
   let fileLoading = $state(false);
+  let fileVersion = $state<"new" | "old">("new");
 
   // Line selection state
   let selectionStart = $state<number | null>(null);
@@ -79,10 +90,14 @@
       : null,
   );
 
-  async function loadFileContent(rid: string, path: string) {
+  async function loadFileContent(
+    rid: string,
+    path: string,
+    version: "old" | "new" = "new",
+  ) {
     fileLoading = true;
     try {
-      fileContent = await getFileContent(rid, path);
+      fileContent = await getFileContent(rid, path, version);
     } catch {
       fileContent = null;
     } finally {
@@ -96,6 +111,7 @@
     closeForm();
     viewMode = "diff";
     fileContent = null;
+    fileVersion = "new";
     try {
       diff = await getFileDiff(rid, path);
     } catch (e: unknown) {
@@ -130,18 +146,63 @@
         : 'text-text-muted hover:text-text'}"
       onclick={() => {
         viewMode = "diff";
+        fileVersion = "new";
       }}>Diff</button
     >
     <button
-      class="text-xs px-2 py-0.5 rounded cursor-pointer {viewMode === 'file'
+      class="text-xs px-2 py-0.5 rounded {viewMode === 'file'
         ? 'bg-bg-active text-text'
-        : 'text-text-muted hover:text-text'}"
+        : hasRepoPath
+          ? 'text-text-muted hover:text-text cursor-pointer'
+          : 'text-text-faint cursor-not-allowed'}"
+      disabled={!hasRepoPath}
+      title={!hasRepoPath ? "Full file view requires a repo path" : undefined}
       onclick={() => {
         viewMode = "file";
-        if (!fileContent) loadFileContent(reviewId, filePath);
+        if (!fileContent || fileVersion !== "new") {
+          fileVersion = "new";
+          loadFileContent(reviewId, filePath, "new");
+        }
       }}>File</button
     >
   </div>
+
+  {#if viewMode === "file"}
+    <div
+      class="flex items-center gap-2 px-4 py-1 border-b border-border bg-bg-surface"
+    >
+      <button
+        class="text-xs px-2 py-0.5 rounded {fileVersion === 'new'
+          ? 'bg-bg-active text-text'
+          : fileStatus === 'Deleted'
+            ? 'text-text-faint cursor-not-allowed'
+            : 'text-text-muted hover:text-text cursor-pointer'}"
+        disabled={fileStatus === "Deleted"}
+        title={fileStatus === "Deleted"
+          ? "No new version for deleted files"
+          : undefined}
+        onclick={() => {
+          fileVersion = "new";
+          loadFileContent(reviewId, filePath, "new");
+        }}>New</button
+      >
+      <button
+        class="text-xs px-2 py-0.5 rounded {fileVersion === 'old'
+          ? 'bg-bg-active text-text'
+          : fileStatus === 'Added'
+            ? 'text-text-faint cursor-not-allowed'
+            : 'text-text-muted hover:text-text cursor-pointer'}"
+        disabled={fileStatus === "Added"}
+        title={fileStatus === "Added"
+          ? "No old version for new files"
+          : undefined}
+        onclick={() => {
+          fileVersion = "old";
+          loadFileContent(reviewId, filePath, "old");
+        }}>Old</button
+      >
+    </div>
+  {/if}
 
   {#if viewMode === "diff"}
     <div class="font-mono text-sm">
