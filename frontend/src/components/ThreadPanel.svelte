@@ -80,15 +80,13 @@
               >
                 {originLabel[thread.origin]}
               </span>
-              <button
-                class="text-xs px-1.5 py-0.5 rounded cursor-pointer transition-colors {thread.status ===
-                'Open'
+              <span
+                class="text-xs px-1.5 py-0.5 rounded {thread.status === 'Open'
                   ? 'bg-status-open/15 text-status-open'
                   : 'bg-bg-surface text-text-faint'}"
-                onclick={() => toggleStatus(thread)}
               >
                 {thread.status}
-              </button>
+              </span>
             </div>
           </div>
 
@@ -110,26 +108,39 @@
           </div>
 
           <!-- Reply box -->
-          <div class="mt-2 flex gap-2">
-            <input
-              type="text"
-              class="flex-1 text-sm bg-bg-surface border border-border rounded px-2 py-1 text-text placeholder:text-text-faint focus:outline-none focus:border-accent"
+          <div class="mt-2">
+            <textarea
+              class="w-full text-sm bg-bg-surface border border-border rounded px-2 py-1.5 text-text placeholder:text-text-faint focus:outline-none focus:border-accent resize-y"
               placeholder="Reply..."
+              rows={2}
               bind:value={replyTexts[thread.id]}
               onkeydown={(e: KeyboardEvent) => {
-                if (e.key === "Enter" && !e.shiftKey) {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                   e.preventDefault();
                   submitReply(thread.id);
                 }
               }}
-            />
-            <button
-              class="text-sm px-2 py-1 bg-bg-surface border border-border rounded hover:bg-bg-hover transition-colors cursor-pointer disabled:opacity-50"
-              disabled={submitting[thread.id] || !replyTexts[thread.id]?.trim()}
-              onclick={() => submitReply(thread.id)}
-            >
-              Send
-            </button>
+            ></textarea>
+            <div class="flex items-center gap-2 mt-1.5">
+              <button
+                class="text-sm px-2 py-1 bg-bg-surface border border-border rounded hover:bg-bg-hover transition-colors cursor-pointer disabled:opacity-50"
+                disabled={submitting[thread.id] ||
+                  !replyTexts[thread.id]?.trim()}
+                onclick={() => submitReply(thread.id)}
+              >
+                Reply
+              </button>
+              <button
+                class="text-sm px-2 py-1 rounded cursor-pointer transition-colors {thread.status ===
+                'Open'
+                  ? 'bg-status-open/15 text-status-open hover:bg-status-open/25'
+                  : 'bg-bg-surface text-text-muted hover:bg-bg-hover'}"
+                onclick={() => toggleStatus(thread)}
+              >
+                {thread.status === "Open" ? "Resolve" : "Reopen"}
+              </button>
+              <span class="text-xs text-text-faint ml-auto">⌘Enter</span>
+            </div>
           </div>
         </div>
       {/each}
