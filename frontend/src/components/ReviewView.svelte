@@ -24,6 +24,10 @@
   let threadsPanelOpen = $state(true);
   let highlightThreadId = $state<string | null>(null);
 
+  let selectedFileStatus = $derived(
+    files.find((f) => f.path === selectedFile)?.status ?? "Modified",
+  );
+
   async function load() {
     try {
       const [r, f] = await Promise.all([
@@ -111,6 +115,8 @@
             {reviewId}
             filePath={selectedFile}
             {threads}
+            fileStatus={selectedFileStatus}
+            hasRepoPath={review.has_repo_path}
             onThreadCreated={(threadId) => {
               highlightThreadId = threadId;
               if (selectedFile) loadThreads(selectedFile);
