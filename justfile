@@ -73,8 +73,8 @@ worktree-list:
 # Remove a worktree and its branch
 worktree-remove branch:
     git worktree remove .worktrees/{{branch}}
-    git branch -d {{branch}}
-    @echo "Removed worktree and branch {{branch}}"
+    -git branch -d {{branch}}
+    @echo "Removed worktree {{branch}}"
 
 # Remove all worktrees
 worktree-clean:
