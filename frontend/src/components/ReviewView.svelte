@@ -22,6 +22,7 @@
   let selectedFile = $state<string | null>(null);
   let error = $state<string | null>(null);
   let threadsPanelOpen = $state(true);
+  let highlightThreadId = $state<string | null>(null);
 
   async function load() {
     try {
@@ -106,7 +107,18 @@
       <!-- Diff -->
       <main class="flex-1 overflow-y-auto min-w-0">
         {#if selectedFile}
-          <DiffView {reviewId} filePath={selectedFile} {threads} />
+          <DiffView
+            {reviewId}
+            filePath={selectedFile}
+            {threads}
+            onThreadCreated={(threadId) => {
+              highlightThreadId = threadId;
+              if (selectedFile) loadThreads(selectedFile);
+              setTimeout(() => {
+                highlightThreadId = null;
+              }, 1000);
+            }}
+          />
         {:else}
           <div class="flex items-center justify-center h-full">
             <p class="text-text-muted">Select a file</p>
@@ -118,8 +130,8 @@
       {#if threadsPanelOpen}
         <aside class="w-80 border-l border-border overflow-y-auto shrink-0">
           <ThreadPanel
-            {reviewId}
             {threads}
+            {highlightThreadId}
             onThreadsChanged={() => {
               if (selectedFile) loadThreads(selectedFile);
             }}

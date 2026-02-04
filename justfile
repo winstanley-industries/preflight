@@ -9,7 +9,7 @@ frontend-install:
     cd frontend && npm ci
 
 # All frontend checks
-frontend: frontend-install frontend-fmt frontend-lint frontend-check frontend-build
+frontend: frontend-install frontend-fmt frontend-lint frontend-check frontend-test frontend-build
 
 # Rust formatting check
 rust-fmt:
@@ -34,6 +34,10 @@ frontend-lint:
 # Frontend formatting check
 frontend-fmt:
     cd frontend && npm run format:check
+
+# Frontend tests
+frontend-test:
+    cd frontend && npm test
 
 # Frontend build
 frontend-build:
