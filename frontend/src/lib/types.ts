@@ -53,6 +53,7 @@ export interface DiffLine {
   content: string;
   old_line_no: number | null;
   new_line_no: number | null;
+  highlighted?: string;
 }
 
 export interface ThreadResponse {

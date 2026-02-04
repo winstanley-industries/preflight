@@ -158,13 +158,23 @@
             <span class="w-6 shrink-0"></span>
           {/if}
           <!-- Line content -->
-          <span
-            class="flex-1 px-2 whitespace-pre leading-6"
-            class:text-diff-add-text={line.kind === "Added"}
-            class:text-diff-remove-text={line.kind === "Removed"}
-          >
-            {line.content}
-          </span>
+          {#if line.highlighted}
+            <!-- eslint-disable svelte/no-at-html-tags -->
+            <span
+              class="flex-1 px-2 whitespace-pre leading-6"
+              class:text-diff-add-text={line.kind === "Added"}
+              class:text-diff-remove-text={line.kind === "Removed"}
+            >{@html line.highlighted}</span>
+            <!-- eslint-enable svelte/no-at-html-tags -->
+          {:else}
+            <span
+              class="flex-1 px-2 whitespace-pre leading-6"
+              class:text-diff-add-text={line.kind === "Added"}
+              class:text-diff-remove-text={line.kind === "Removed"}
+            >
+              {line.content}
+            </span>
+          {/if}
         </div>
 
         <!-- Inline comment form (after the last selected line) -->

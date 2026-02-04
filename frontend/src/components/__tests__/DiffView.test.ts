@@ -188,6 +188,38 @@ describe("DiffView", () => {
     expect(bullet?.textContent?.trim()).toBe("•");
   });
 
+  it("renders highlighted HTML when present", async () => {
+    const highlightedFixture: FileDiffResponse = {
+      path: "src/main.ts",
+      old_path: null,
+      status: "Modified",
+      hunks: [
+        {
+          old_start: 1,
+          old_count: 1,
+          new_start: 1,
+          new_count: 1,
+          context: null,
+          lines: [
+            {
+              kind: "Context",
+              content: "const x = 1;",
+              old_line_no: 1,
+              new_line_no: 1,
+              highlighted:
+                '<span class="sy-keyword">const</span> x = 1;',
+            },
+          ],
+        },
+      ],
+    };
+    mockGetFileDiff.mockResolvedValueOnce(highlightedFixture);
+    render(DiffView, {
+      props: { reviewId: "rev-1", filePath: "src/main.ts", threads: [] },
+    });
+    await screen.findByText("const", { selector: ".sy-keyword" });
+  });
+
   it("calls onThreadCreated after form submission", async () => {
     const user = userEvent.setup();
     const onThreadCreated = vi.fn();
