@@ -17,5 +17,8 @@ frontend/dist/
 # Worktrees
 .worktrees/
 
+# Runtime state
+preflight-state.json
+
 # OS
 .DS_Store
