@@ -1167,6 +1167,7 @@ dependencies = [
  "mime_guess",
  "preflight-core",
  "preflight-mcp",
+ "rmcp",
  "rust-embed",
  "serde",
  "serde_json",

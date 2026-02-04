@@ -135,8 +135,7 @@ impl PreflightMcp {
             None => format!("/api/reviews/{}/threads", input.review_id),
         };
 
-        let threads: serde_json::Value =
-            self.client.get(&path).await.map_err(format_error)?;
+        let threads: serde_json::Value = self.client.get(&path).await.map_err(format_error)?;
 
         serde_json::to_string_pretty(&threads).map_err(|e| e.to_string())
     }
@@ -153,10 +152,7 @@ impl PreflightMcp {
 
         let comment: serde_json::Value = self
             .client
-            .post(
-                &format!("/api/threads/{}/comments", input.thread_id),
-                &body,
-            )
+            .post(&format!("/api/threads/{}/comments", input.thread_id), &body)
             .await
             .map_err(format_error)?;
 

@@ -8,7 +8,10 @@ use rmcp::{ServiceExt, transport::stdio};
 use tokio::net::TcpListener;
 
 #[derive(Parser)]
-#[command(name = "preflight", about = "Local code review tool for AI-generated changes")]
+#[command(
+    name = "preflight",
+    about = "Local code review tool for AI-generated changes"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,

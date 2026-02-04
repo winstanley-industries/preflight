@@ -54,9 +54,7 @@ async fn test_full_review_flow() {
     // Get diff for a file
     let file_path = files.as_array().unwrap()[0]["path"].as_str().unwrap();
     let diff: serde_json::Value = client
-        .get(&format!(
-            "/api/reviews/{review_id}/files/{file_path}"
-        ))
+        .get(&format!("/api/reviews/{review_id}/files/{file_path}"))
         .await
         .unwrap();
     assert_eq!(diff["path"].as_str().unwrap(), file_path);
