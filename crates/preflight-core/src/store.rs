@@ -18,6 +18,8 @@ pub struct ReviewSummary {
 pub struct CreateReviewInput {
     pub title: Option<String>,
     pub files: Vec<FileDiff>,
+    pub repo_path: Option<String>,
+    pub base_ref: Option<String>,
 }
 
 /// Input for creating a new comment thread.

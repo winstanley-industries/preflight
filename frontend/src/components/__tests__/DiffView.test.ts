@@ -10,8 +10,9 @@ vi.mock("../../lib/api", () => ({
   createThread: vi.fn(),
 }));
 
-import { getFileDiff, createThread } from "../../lib/api";
+import { getFileDiff, getFileContent, createThread } from "../../lib/api";
 const mockGetFileDiff = vi.mocked(getFileDiff);
+const mockGetFileContent = vi.mocked(getFileContent);
 const mockCreateThread = vi.mocked(createThread);
 
 const FIXTURE: FileDiffResponse = {
@@ -98,6 +99,8 @@ async function renderDiff(
     props: {
       reviewId: "rev-1",
       filePath: "src/main.ts",
+      fileStatus: "Modified" as const,
+      hasRepoPath: true,
       threads,
       ...overrides,
     },
@@ -217,7 +220,13 @@ describe("DiffView", () => {
     };
     mockGetFileDiff.mockResolvedValueOnce(highlightedFixture);
     render(DiffView, {
-      props: { reviewId: "rev-1", filePath: "src/main.ts", threads: [] },
+      props: {
+        reviewId: "rev-1",
+        filePath: "src/main.ts",
+        fileStatus: "Modified" as const,
+        hasRepoPath: true,
+        threads: [],
+      },
     });
     await screen.findByText("const", { selector: ".sy-keyword" });
   });
@@ -244,5 +253,184 @@ describe("DiffView", () => {
     await user.type(screen.getByRole("textbox"), "Nice change");
     await user.click(screen.getByRole("button", { name: "Submit" }));
     expect(onThreadCreated).toHaveBeenCalledWith("thread-new");
+  });
+
+  // --- File view toggle ---
+
+  it("File button is disabled when hasRepoPath is false", async () => {
+    await renderDiff([], { hasRepoPath: false });
+    const fileBtn = screen.getByRole("button", { name: "File" });
+    expect(fileBtn).toBeDisabled();
+  });
+
+  it("clicking File button switches to file view and loads content", async () => {
+    const user = userEvent.setup();
+    mockGetFileContent.mockResolvedValueOnce({
+      path: "src/main.ts",
+      language: "typescript",
+      lines: [
+        { line_no: 1, content: "import { foo } from 'bar';" },
+        { line_no: 2, content: "const x = 2;" },
+        { line_no: 3, content: "const y = 3;" },
+      ],
+    });
+    await renderDiff();
+    await user.click(screen.getByRole("button", { name: "File" }));
+    // Wait for file content to load — look for a line number from file view
+    await screen.findByText("import { foo } from 'bar';");
+    expect(mockGetFileContent).toHaveBeenCalledWith(
+      "rev-1",
+      "src/main.ts",
+      "new",
+    );
+  });
+
+  it("version buttons disable correctly based on fileStatus", async () => {
+    const user = userEvent.setup();
+    mockGetFileContent.mockResolvedValueOnce({
+      path: "src/new.ts",
+      language: "typescript",
+      lines: [{ line_no: 1, content: "new file" }],
+    });
+    await renderDiff([], { fileStatus: "Added" as const });
+    await user.click(screen.getByRole("button", { name: "File" }));
+    await screen.findByText("new file");
+    // Old button should be disabled for Added files
+    const oldBtn = screen.getByRole("button", { name: "Old" });
+    expect(oldBtn).toBeDisabled();
+  });
+
+  // --- Changed line highlighting ---
+
+  it("highlights changed lines in file view", async () => {
+    const user = userEvent.setup();
+    mockGetFileContent.mockResolvedValueOnce({
+      path: "src/main.ts",
+      language: "typescript",
+      lines: [
+        { line_no: 1, content: "import { foo } from 'bar';" },
+        { line_no: 2, content: "const x = 2;" },
+        { line_no: 3, content: "const y = 3;" },
+        { line_no: 4, content: "export default x;" },
+      ],
+    });
+    await renderDiff();
+    await user.click(screen.getByRole("button", { name: "File" }));
+    await screen.findByText("const x = 2;");
+
+    // Lines 2 and 3 are Added in the diff — they should have the add highlight
+    const line2 = document.getElementById("L2");
+    const line3 = document.getElementById("L3");
+    const line1 = document.getElementById("L1");
+    expect(line2?.className).toContain("bg-diff-add-bg");
+    expect(line3?.className).toContain("bg-diff-add-bg");
+    // Line 1 is Context — should not have add highlight
+    expect(line1?.className).not.toContain("bg-diff-add-bg");
+  });
+
+  // --- Inline comments in file view ---
+
+  it("gutter click opens inline comment form in file view", async () => {
+    const user = userEvent.setup();
+    mockGetFileContent.mockResolvedValueOnce({
+      path: "src/main.ts",
+      language: "typescript",
+      lines: [
+        { line_no: 1, content: "line one" },
+        { line_no: 2, content: "line two" },
+      ],
+    });
+    await renderDiff();
+    await user.click(screen.getByRole("button", { name: "File" }));
+    await screen.findByText("line one");
+
+    // In file view, each line has a gutter button
+    // There are toggle buttons (Diff, File, New, Old) + 2 gutter buttons = 6
+    const buttons = screen.getAllByRole("button");
+    const gutterButtons = buttons.filter(
+      (b) => b.className.includes("w-6") && b.className.includes("leading-6"),
+    );
+    expect(gutterButtons.length).toBe(2);
+    await user.click(gutterButtons[0]);
+    expect(screen.getByPlaceholderText("Add a comment...")).toBeInTheDocument();
+  });
+
+  // --- navigateToLine ---
+
+  it("navigateToLine calls scrollIntoView for a line in the diff", async () => {
+    const scrollIntoView = vi.fn();
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+
+    // The navigateToLine effect fires before the diff loads (diffLineNumbers
+    // empty), so it first switches to file view. Once the diff loads and
+    // diffLineNumbers is populated, the effect re-runs and finds line 2.
+    mockGetFileContent.mockResolvedValueOnce({
+      path: "src/main.ts",
+      language: "typescript",
+      lines: [{ line_no: 2, content: "const x = 2;" }],
+    });
+    mockGetFileDiff.mockResolvedValueOnce(FIXTURE);
+    render(DiffView, {
+      props: {
+        reviewId: "rev-1",
+        filePath: "src/main.ts",
+        fileStatus: "Modified" as const,
+        hasRepoPath: true,
+        threads: [],
+        navigateToLine: 2,
+      },
+    });
+
+    await vi.waitFor(() => {
+      expect(scrollIntoView).toHaveBeenCalled();
+    });
+  });
+
+  it("navigateToLine switches to file view for lines outside diff", async () => {
+    mockGetFileContent.mockResolvedValueOnce({
+      path: "src/main.ts",
+      language: "typescript",
+      lines: [
+        { line_no: 1, content: "line 1" },
+        { line_no: 7, content: "line 7" },
+      ],
+    });
+    mockGetFileDiff.mockResolvedValueOnce(FIXTURE);
+    // Line 7 is not in the diff (diff has lines 1-4 and 11)
+    render(DiffView, {
+      props: {
+        reviewId: "rev-1",
+        filePath: "src/main.ts",
+        fileStatus: "Modified" as const,
+        hasRepoPath: true,
+        threads: [],
+        navigateToLine: 7,
+      },
+    });
+
+    // Should switch to file view and load content
+    await screen.findByText("line 7");
+    expect(mockGetFileContent).toHaveBeenCalledWith(
+      "rev-1",
+      "src/main.ts",
+      "new",
+    );
+  });
+
+  it("navigateToLine does not switch to file view when hasRepoPath is false", async () => {
+    await renderDiff([], { hasRepoPath: false, navigateToLine: 7 });
+    // Should stay in diff view — no file content loaded
+    expect(mockGetFileContent).not.toHaveBeenCalled();
+  });
+
+  // --- onDiffLinesKnown ---
+
+  it("calls onDiffLinesKnown with diff line numbers after load", async () => {
+    const onDiffLinesKnown = vi.fn();
+    await renderDiff([], { onDiffLinesKnown });
+    expect(onDiffLinesKnown).toHaveBeenCalled();
+    const lines: Set<number> = onDiffLinesKnown.mock.calls[0][0];
+    // FIXTURE has new_line_no: 1, 2, 3, 4, 11
+    expect(lines).toEqual(new Set([1, 2, 3, 4, 11]));
   });
 });

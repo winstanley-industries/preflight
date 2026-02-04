@@ -47,7 +47,9 @@ function renderPanel(
     props: {
       threads,
       highlightThreadId: null,
+      diffLines: new Set([5, 6, 7, 8]),
       onThreadsChanged: vi.fn(),
+      onNavigateToThread: vi.fn(),
       ...overrides,
     },
   });
@@ -109,21 +111,42 @@ describe("ThreadPanel", () => {
     expect(screen.getByRole("button", { name: "Reopen" })).toBeInTheDocument();
   });
 
-  it('clicking "Lines X–Y" calls scrollIntoView', async () => {
+  it('clicking "Lines X–Y" calls onNavigateToThread with line_start', async () => {
     const user = userEvent.setup();
-    // Create a target element for scrollIntoView
-    const target = document.createElement("div");
-    target.id = "L5";
-    target.scrollIntoView = vi.fn();
-    document.body.appendChild(target);
-
-    renderPanel([OPEN_THREAD]);
+    const onNavigateToThread = vi.fn();
+    renderPanel([OPEN_THREAD], { onNavigateToThread });
     await user.click(screen.getByText(/Lines 5/));
-    expect(target.scrollIntoView).toHaveBeenCalledWith({
-      behavior: "smooth",
-      block: "center",
-    });
+    expect(onNavigateToThread).toHaveBeenCalledWith(5);
+  });
 
-    document.body.removeChild(target);
+  it("threads in diff show accent color, threads outside diff show muted color with arrow", () => {
+    const outsideThread: ThreadResponse = {
+      ...OPEN_THREAD,
+      id: "t-outside",
+      line_start: 20,
+      line_end: 22,
+    };
+    // diffLines contains 5-8, so OPEN_THREAD (5-8) is in diff, outsideThread (20-22) is not
+    renderPanel([OPEN_THREAD, outsideThread]);
+
+    const buttons = screen.getAllByRole("button", { name: /Lines/ });
+    // In-diff thread should have accent color
+    expect(buttons[0].className).toContain("text-accent");
+    expect(buttons[0].className).not.toContain("text-text-muted");
+    // Out-of-diff thread should have muted color and arrow
+    expect(buttons[1].className).toContain("text-text-muted");
+    expect(buttons[1].textContent).toContain("→");
+  });
+
+  it('threads outside diff have "Opens full file view" tooltip', () => {
+    const outsideThread: ThreadResponse = {
+      ...OPEN_THREAD,
+      id: "t-outside",
+      line_start: 20,
+      line_end: 22,
+    };
+    renderPanel([outsideThread]);
+    const button = screen.getByRole("button", { name: /Lines 20/ });
+    expect(button.title).toBe("Opens full file view");
   });
 });

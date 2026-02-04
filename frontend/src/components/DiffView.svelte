@@ -1,8 +1,10 @@
 <script lang="ts">
+  import { tick } from "svelte";
   import { getFileDiff, getFileContent } from "../lib/api";
   import type {
     FileDiffResponse,
     FileContentResponse,
+    FileStatus,
     ThreadResponse,
   } from "../lib/types";
   import InlineCommentForm from "./InlineCommentForm.svelte";
@@ -11,10 +13,23 @@
     reviewId: string;
     filePath: string;
     threads: ThreadResponse[];
+    fileStatus: FileStatus;
+    hasRepoPath: boolean;
+    navigateToLine?: number | null;
     onThreadCreated?: (threadId: string) => void;
+    onDiffLinesKnown?: (lines: Set<number>) => void;
   }
 
-  let { reviewId, filePath, threads, onThreadCreated }: Props = $props();
+  let {
+    reviewId,
+    filePath,
+    threads,
+    fileStatus,
+    hasRepoPath,
+    navigateToLine = null,
+    onThreadCreated,
+    onDiffLinesKnown,
+  }: Props = $props();
 
   let diff = $state<FileDiffResponse | null>(null);
   let error = $state<string | null>(null);
@@ -23,6 +38,7 @@
   let viewMode = $state<"diff" | "file">("diff");
   let fileContent = $state<FileContentResponse | null>(null);
   let fileLoading = $state(false);
+  let fileVersion = $state<"new" | "old">("new");
 
   // Line selection state
   let selectionStart = $state<number | null>(null);
@@ -72,6 +88,23 @@
     onThreadCreated?.(threadId);
   }
 
+  // Lines changed in the diff, for highlighting in file view
+  let changedLines = $derived(
+    new Set(
+      diff?.hunks.flatMap((hunk) =>
+        hunk.lines
+          .filter((line) =>
+            fileVersion === "new"
+              ? line.kind === "Added" && line.new_line_no !== null
+              : line.kind === "Removed" && line.old_line_no !== null,
+          )
+          .map((line) =>
+            fileVersion === "new" ? line.new_line_no! : line.old_line_no!,
+          ),
+      ) ?? [],
+    ),
+  );
+
   // Compute where the form should appear (after the last selected line)
   let formLineNo = $derived(
     selectionStart !== null
@@ -79,10 +112,14 @@
       : null,
   );
 
-  async function loadFileContent(rid: string, path: string) {
+  async function loadFileContent(
+    rid: string,
+    path: string,
+    version: "old" | "new" = "new",
+  ) {
     fileLoading = true;
     try {
-      fileContent = await getFileContent(rid, path);
+      fileContent = await getFileContent(rid, path, version);
     } catch {
       fileContent = null;
     } finally {
@@ -96,6 +133,7 @@
     closeForm();
     viewMode = "diff";
     fileContent = null;
+    fileVersion = "new";
     try {
       diff = await getFileDiff(rid, path);
     } catch (e: unknown) {
@@ -108,6 +146,54 @@
 
   $effect(() => {
     loadDiff(reviewId, filePath);
+  });
+
+  // Set of all new-side line numbers present in the diff
+  let diffLineNumbers = $derived(
+    new Set(
+      diff?.hunks.flatMap((hunk) =>
+        hunk.lines
+          .filter((line) => line.new_line_no !== null)
+          .map((line) => line.new_line_no!),
+      ) ?? [],
+    ),
+  );
+
+  // Report diff line numbers to parent when they change
+  $effect(() => {
+    if (diff) {
+      onDiffLinesKnown?.(diffLineNumbers);
+    }
+  });
+
+  // Navigate to a specific line when requested
+  $effect(() => {
+    if (navigateToLine == null) return;
+    const target = navigateToLine;
+
+    if (diffLineNumbers.has(target)) {
+      // Line is in the diff — scroll to it
+      requestAnimationFrame(() => {
+        const el = document.getElementById(`L${target}`);
+        el?.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
+    } else if (hasRepoPath) {
+      // Line is outside the diff — switch to file view
+      viewMode = "file";
+      if (!fileContent || fileVersion !== "new") {
+        fileVersion = "new";
+        loadFileContent(reviewId, filePath, "new").then(async () => {
+          await tick();
+          const el = document.getElementById(`L${target}`);
+          el?.scrollIntoView({ behavior: "smooth", block: "center" });
+        });
+      } else {
+        tick().then(() => {
+          const el = document.getElementById(`L${target}`);
+          el?.scrollIntoView({ behavior: "smooth", block: "center" });
+        });
+      }
+    }
   });
 </script>
 
@@ -130,18 +216,63 @@
         : 'text-text-muted hover:text-text'}"
       onclick={() => {
         viewMode = "diff";
+        fileVersion = "new";
       }}>Diff</button
     >
     <button
-      class="text-xs px-2 py-0.5 rounded cursor-pointer {viewMode === 'file'
+      class="text-xs px-2 py-0.5 rounded {viewMode === 'file'
         ? 'bg-bg-active text-text'
-        : 'text-text-muted hover:text-text'}"
+        : hasRepoPath
+          ? 'text-text-muted hover:text-text cursor-pointer'
+          : 'text-text-faint cursor-not-allowed'}"
+      disabled={!hasRepoPath}
+      title={!hasRepoPath ? "Full file view requires a repo path" : undefined}
       onclick={() => {
         viewMode = "file";
-        if (!fileContent) loadFileContent(reviewId, filePath);
+        if (!fileContent || fileVersion !== "new") {
+          fileVersion = "new";
+          loadFileContent(reviewId, filePath, "new");
+        }
       }}>File</button
     >
   </div>
+
+  {#if viewMode === "file"}
+    <div
+      class="flex items-center gap-2 px-4 py-1 border-b border-border bg-bg-surface"
+    >
+      <button
+        class="text-xs px-2 py-0.5 rounded {fileVersion === 'new'
+          ? 'bg-bg-active text-text'
+          : fileStatus === 'Deleted'
+            ? 'text-text-faint cursor-not-allowed'
+            : 'text-text-muted hover:text-text cursor-pointer'}"
+        disabled={fileStatus === "Deleted"}
+        title={fileStatus === "Deleted"
+          ? "No new version for deleted files"
+          : undefined}
+        onclick={() => {
+          fileVersion = "new";
+          loadFileContent(reviewId, filePath, "new");
+        }}>New</button
+      >
+      <button
+        class="text-xs px-2 py-0.5 rounded {fileVersion === 'old'
+          ? 'bg-bg-active text-text'
+          : fileStatus === 'Added'
+            ? 'text-text-faint cursor-not-allowed'
+            : 'text-text-muted hover:text-text cursor-pointer'}"
+        disabled={fileStatus === "Added"}
+        title={fileStatus === "Added"
+          ? "No old version for new files"
+          : undefined}
+        onclick={() => {
+          fileVersion = "old";
+          loadFileContent(reviewId, filePath, "old");
+        }}>Old</button
+      >
+    </div>
+  {/if}
 
   {#if viewMode === "diff"}
     <div class="font-mono text-sm">
@@ -251,8 +382,17 @@
     <div class="font-mono text-sm">
       {#each fileContent.lines as line (line.line_no)}
         {@const hasThread = threadLines.has(line.line_no)}
+        {@const selected = isLineSelected(line.line_no)}
         <div
-          class="group flex hover:brightness-125 transition-[filter]"
+          class="group flex hover:brightness-125 transition-[filter] {selected
+            ? 'bg-accent/10'
+            : ''}"
+          class:bg-diff-add-bg={fileVersion === "new" &&
+            changedLines.has(line.line_no) &&
+            !selected}
+          class:bg-diff-remove-bg={fileVersion === "old" &&
+            changedLines.has(line.line_no) &&
+            !selected}
           id={`L${line.line_no}`}
         >
           <span
@@ -260,11 +400,19 @@
           >
             {line.line_no}
           </span>
-          <span class="w-6 shrink-0 text-center select-none leading-6">
+          <button
+            class="w-6 shrink-0 text-center select-none leading-6 cursor-pointer"
+            onclick={(e: MouseEvent) => handleGutterClick(line.line_no, e)}
+          >
             {#if hasThread}
               <span class="text-accent text-xs">&bull;</span>
+            {:else}
+              <span
+                class="text-accent text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                >+</span
+              >
             {/if}
-          </span>
+          </button>
           {#if line.highlighted}
             <!-- eslint-disable svelte/no-at-html-tags -->
             <span class="flex-1 px-2 whitespace-pre leading-6"
@@ -277,6 +425,21 @@
             >
           {/if}
         </div>
+
+        <!-- Inline comment form (after the last selected line) -->
+        {#if formOpen && line.line_no === formLineNo}
+          <InlineCommentForm
+            {reviewId}
+            {filePath}
+            lineStart={Math.min(
+              selectionStart!,
+              selectionEnd ?? selectionStart!,
+            )}
+            lineEnd={Math.max(selectionStart!, selectionEnd ?? selectionStart!)}
+            onSubmit={handleThreadCreated}
+            onCancel={closeForm}
+          />
+        {/if}
       {/each}
     </div>
   {/if}

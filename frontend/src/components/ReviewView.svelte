@@ -23,6 +23,12 @@
   let error = $state<string | null>(null);
   let threadsPanelOpen = $state(true);
   let highlightThreadId = $state<string | null>(null);
+  let navigateToLine = $state<number | null>(null);
+  let diffLines = $state<Set<number>>(new Set());
+
+  let selectedFileStatus = $derived(
+    files.find((f) => f.path === selectedFile)?.status ?? "Modified",
+  );
 
   async function load() {
     try {
@@ -100,6 +106,8 @@
           {selectedFile}
           onSelect={(path) => {
             selectedFile = path;
+            navigateToLine = null;
+            diffLines = new Set();
           }}
         />
       </aside>
@@ -111,6 +119,12 @@
             {reviewId}
             filePath={selectedFile}
             {threads}
+            fileStatus={selectedFileStatus}
+            hasRepoPath={review.has_repo_path}
+            {navigateToLine}
+            onDiffLinesKnown={(lines) => {
+              diffLines = lines;
+            }}
             onThreadCreated={(threadId) => {
               highlightThreadId = threadId;
               if (selectedFile) loadThreads(selectedFile);
@@ -132,6 +146,13 @@
           <ThreadPanel
             {threads}
             {highlightThreadId}
+            {diffLines}
+            onNavigateToThread={(line) => {
+              navigateToLine = line;
+              setTimeout(() => {
+                navigateToLine = null;
+              }, 100);
+            }}
             onThreadsChanged={() => {
               if (selectedFile) loadThreads(selectedFile);
             }}

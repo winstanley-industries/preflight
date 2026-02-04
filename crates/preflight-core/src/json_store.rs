@@ -61,6 +61,8 @@ impl ReviewStore for JsonFileStore {
             created_at: now,
             updated_at: now,
             files: input.files,
+            repo_path: input.repo_path,
+            base_ref: input.base_ref,
         };
         state.reviews.insert(review.id, review.clone());
         self.persist(&state).await?;
@@ -221,6 +223,8 @@ mod tests {
             .create_review(CreateReviewInput {
                 title: Some("Test".into()),
                 files: sample_files(),
+                repo_path: None,
+                base_ref: None,
             })
             .await
             .unwrap()
@@ -233,6 +237,8 @@ mod tests {
             .create_review(CreateReviewInput {
                 title: Some("Test review".into()),
                 files: sample_files(),
+                repo_path: None,
+                base_ref: None,
             })
             .await
             .unwrap();
@@ -258,6 +264,8 @@ mod tests {
             .create_review(CreateReviewInput {
                 title: Some("First".into()),
                 files: sample_files(),
+                repo_path: None,
+                base_ref: None,
             })
             .await
             .unwrap();
@@ -265,6 +273,8 @@ mod tests {
             .create_review(CreateReviewInput {
                 title: Some("Second".into()),
                 files: vec![],
+                repo_path: None,
+                base_ref: None,
             })
             .await
             .unwrap();
@@ -279,6 +289,8 @@ mod tests {
             .create_review(CreateReviewInput {
                 title: None,
                 files: vec![],
+                repo_path: None,
+                base_ref: None,
             })
             .await
             .unwrap();
@@ -300,6 +312,8 @@ mod tests {
                 .create_review(CreateReviewInput {
                     title: Some("Persisted".into()),
                     files: sample_files(),
+                    repo_path: None,
+                    base_ref: None,
                 })
                 .await
                 .unwrap();
@@ -463,6 +477,26 @@ mod tests {
             })
             .await;
         assert!(matches!(result, Err(StoreError::ThreadNotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn test_create_review_with_repo_path() {
+        let (store, _dir) = test_store().await;
+        let review = store
+            .create_review(CreateReviewInput {
+                title: Some("Repo test".into()),
+                files: sample_files(),
+                repo_path: Some("/tmp/fake-repo".into()),
+                base_ref: Some("HEAD~1".into()),
+            })
+            .await
+            .unwrap();
+        assert_eq!(review.repo_path.as_deref(), Some("/tmp/fake-repo"));
+        assert_eq!(review.base_ref.as_deref(), Some("HEAD~1"));
+
+        let fetched = store.get_review(review.id).await.unwrap();
+        assert_eq!(fetched.repo_path.as_deref(), Some("/tmp/fake-repo"));
+        assert_eq!(fetched.base_ref.as_deref(), Some("HEAD~1"));
     }
 
     #[tokio::test]

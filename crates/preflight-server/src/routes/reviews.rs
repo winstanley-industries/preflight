@@ -23,11 +23,14 @@ async fn create_review(
     Json(request): Json<CreateReviewRequest>,
 ) -> Result<Json<ReviewResponse>, ApiError> {
     let files = preflight_core::parser::parse_diff(&request.diff).unwrap_or_default();
+    let has_repo_path = request.repo_path.is_some();
     let review = state
         .store
         .create_review(CreateReviewInput {
             title: request.title,
             files,
+            repo_path: request.repo_path,
+            base_ref: request.base_ref,
         })
         .await?;
     Ok(Json(ReviewResponse {
@@ -36,6 +39,7 @@ async fn create_review(
         status: review.status,
         file_count: review.files.len(),
         thread_count: 0,
+        has_repo_path,
         created_at: review.created_at,
         updated_at: review.updated_at,
     }))
@@ -54,6 +58,7 @@ async fn list_reviews(
             status: review.status,
             file_count: review.files.len(),
             thread_count: summary.thread_count,
+            has_repo_path: review.repo_path.is_some(),
             created_at: review.created_at,
             updated_at: review.updated_at,
         });
@@ -73,6 +78,7 @@ async fn get_review(
         status: review.status,
         file_count: review.files.len(),
         thread_count,
+        has_repo_path: review.repo_path.is_some(),
         created_at: review.created_at,
         updated_at: review.updated_at,
     }))
@@ -227,6 +233,62 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_create_review_with_repo_path() {
+        let app = test_app().await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/reviews")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "title": "Repo test",
+                            "diff": "",
+                            "repo_path": "/tmp/fake",
+                            "base_ref": "abc123"
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let json = body_json(response).await;
+        assert_eq!(json["has_repo_path"], true);
+    }
+
+    #[tokio::test]
+    async fn test_create_review_without_repo_path() {
+        let app = test_app().await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/reviews")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "title": "No repo",
+                            "diff": ""
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let json = body_json(response).await;
+        assert_eq!(json["has_repo_path"], false);
     }
 
     #[tokio::test]
