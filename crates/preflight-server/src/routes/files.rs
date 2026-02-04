@@ -523,4 +523,103 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
+
+    /// Helper: create a temp git repo with a renamed file, return its path and a diff string.
+    fn setup_rename_repo() -> (tempfile::TempDir, String) {
+        use std::process::Command;
+        let dir = tempfile::TempDir::new().unwrap();
+        let p = dir.path();
+
+        Command::new("git")
+            .args(["init"])
+            .current_dir(p)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.email", "t@t.com"])
+            .current_dir(p)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.name", "T"])
+            .current_dir(p)
+            .output()
+            .unwrap();
+
+        std::fs::create_dir_all(p.join("src")).unwrap();
+        std::fs::write(p.join("src/old_name.rs"), "fn old() {}\n").unwrap();
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(p)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "init"])
+            .current_dir(p)
+            .output()
+            .unwrap();
+
+        Command::new("git")
+            .args(["mv", "src/old_name.rs", "src/new_name.rs"])
+            .current_dir(p)
+            .output()
+            .unwrap();
+
+        let output = Command::new("git")
+            .args(["diff", "--cached"])
+            .current_dir(p)
+            .output()
+            .unwrap();
+        let diff = String::from_utf8(output.stdout).unwrap();
+
+        (dir, diff)
+    }
+
+    #[tokio::test]
+    async fn test_get_file_content_old_version_uses_old_path_for_rename() {
+        let app = test_app().await;
+        let (repo_dir, diff) = setup_rename_repo();
+        let id = create_review_with_repo(&app, repo_dir.path().to_str().unwrap(), &diff).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!(
+                        "/api/reviews/{id}/content/src/new_name.rs?version=old"
+                    ))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let json = body_json(response).await;
+        let lines = json["lines"].as_array().unwrap();
+        assert_eq!(lines[0]["content"], "fn old() {}");
+        assert_eq!(json["path"], "src/old_name.rs");
+    }
+
+    #[tokio::test]
+    async fn test_get_file_content_old_version_of_added_file_returns_error() {
+        let app = test_app().await;
+        let (repo_dir, _) = setup_test_repo();
+        let diff = "diff --git a/src/brand_new.rs b/src/brand_new.rs\nnew file mode 100644\nindex 0000000..abc1234\n--- /dev/null\n+++ b/src/brand_new.rs\n@@ -0,0 +1 @@\n+fn new_func() {}\n";
+        let id = create_review_with_repo(&app, repo_dir.path().to_str().unwrap(), diff).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!(
+                        "/api/reviews/{id}/content/src/brand_new.rs?version=old"
+                    ))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        // old version of an added file should fail — file didn't exist at HEAD
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
 }
