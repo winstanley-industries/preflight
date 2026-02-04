@@ -23,6 +23,7 @@ export interface ReviewResponse {
   status: ReviewStatus;
   file_count: number;
   thread_count: number;
+  has_repo_path: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -93,6 +94,8 @@ export interface CommentResponse {
 export interface CreateReviewRequest {
   title?: string;
   diff: string;
+  repo_path?: string;
+  base_ref?: string;
 }
 
 export interface UpdateReviewStatusRequest {

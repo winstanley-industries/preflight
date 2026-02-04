@@ -80,8 +80,10 @@ export function getFileDiff(
 export function getFileContent(
   reviewId: string,
   path: string,
+  version?: "old" | "new",
 ): Promise<FileContentResponse> {
-  return request(`/api/reviews/${reviewId}/content/${path}`);
+  const params = version ? `?version=${version}` : "";
+  return request(`/api/reviews/${reviewId}/content/${path}${params}`);
 }
 
 // --- Threads ---
