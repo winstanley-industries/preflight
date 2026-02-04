@@ -5,10 +5,20 @@
   interface Props {
     reviewId: string;
     threads: ThreadResponse[];
+    highlightThreadId: string | null;
     onThreadsChanged: () => void;
   }
 
-  let { threads, onThreadsChanged }: Props = $props();
+  let { threads, highlightThreadId, onThreadsChanged }: Props = $props();
+
+  $effect(() => {
+    if (highlightThreadId) {
+      requestAnimationFrame(() => {
+        const el = document.getElementById(`thread-${highlightThreadId}`);
+        el?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      });
+    }
+  });
 
   let replyTexts = $state<Record<string, string>>({});
   let submitting = $state<Record<string, boolean>>({});
@@ -56,7 +66,7 @@
   {:else}
     <div class="space-y-4">
       {#each threads as thread (thread.id)}
-        <div class="border-b border-border pb-4 mx-4">
+        <div id="thread-{thread.id}" class="border-b border-border pb-4 mx-4">
           <!-- Thread header -->
           <div class="flex items-center justify-between gap-2 mb-2">
             <button
