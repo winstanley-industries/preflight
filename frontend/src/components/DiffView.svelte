@@ -329,12 +329,17 @@
     <div class="font-mono text-sm">
       {#each fileContent.lines as line (line.line_no)}
         {@const hasThread = threadLines.has(line.line_no)}
+        {@const selected = isLineSelected(line.line_no)}
         <div
-          class="group flex hover:brightness-125 transition-[filter]"
+          class="group flex hover:brightness-125 transition-[filter] {selected
+            ? 'bg-accent/10'
+            : ''}"
           class:bg-diff-add-bg={fileVersion === "new" &&
-            changedLines.has(line.line_no)}
+            changedLines.has(line.line_no) &&
+            !selected}
           class:bg-diff-remove-bg={fileVersion === "old" &&
-            changedLines.has(line.line_no)}
+            changedLines.has(line.line_no) &&
+            !selected}
           id={`L${line.line_no}`}
         >
           <span
@@ -342,11 +347,19 @@
           >
             {line.line_no}
           </span>
-          <span class="w-6 shrink-0 text-center select-none leading-6">
+          <button
+            class="w-6 shrink-0 text-center select-none leading-6 cursor-pointer"
+            onclick={(e: MouseEvent) => handleGutterClick(line.line_no, e)}
+          >
             {#if hasThread}
               <span class="text-accent text-xs">&bull;</span>
+            {:else}
+              <span
+                class="text-accent text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                >+</span
+              >
             {/if}
-          </span>
+          </button>
           {#if line.highlighted}
             <!-- eslint-disable svelte/no-at-html-tags -->
             <span class="flex-1 px-2 whitespace-pre leading-6"
@@ -359,6 +372,21 @@
             >
           {/if}
         </div>
+
+        <!-- Inline comment form (after the last selected line) -->
+        {#if formOpen && line.line_no === formLineNo}
+          <InlineCommentForm
+            {reviewId}
+            {filePath}
+            lineStart={Math.min(
+              selectionStart!,
+              selectionEnd ?? selectionStart!,
+            )}
+            lineEnd={Math.max(selectionStart!, selectionEnd ?? selectionStart!)}
+            onSubmit={handleThreadCreated}
+            onCancel={closeForm}
+          />
+        {/if}
       {/each}
     </div>
   {/if}
