@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use axum::{
     Json,
     extract::{Path, State},
@@ -6,13 +8,19 @@ use uuid::Uuid;
 
 use crate::error::ApiError;
 use crate::state::AppState;
-use crate::types::{FileDiffResponse, FileListEntry};
+use crate::types::{FileContentLine, FileContentResponse, FileDiffResponse, FileListEntry};
+use preflight_core::diff::{DiffLine, Hunk, LineKind};
 
 pub fn router() -> axum::Router<AppState> {
     use axum::routing::get;
     axum::Router::new()
         .route("/{id}/files", get(list_files))
         .route("/{id}/files/{*path}", get(get_file_diff))
+}
+
+pub fn content_router() -> axum::Router<AppState> {
+    use axum::routing::get;
+    axum::Router::new().route("/{id}/content/{*path}", get(get_file_content))
 }
 
 async fn list_files(
@@ -60,12 +68,152 @@ async fn get_file_diff(
         .clone()
         .unwrap_or_else(|| file_diff.old_path.clone().unwrap_or_default());
 
+    // Reconstruct full file contents and highlight them
+    let (old_content, new_content) = reconstruct_file_contents(&file_diff.hunks);
+    let old_highlighted = state.highlighter.highlight_file(&old_content, &path);
+    let new_highlighted = state.highlighter.highlight_file(&new_content, &path);
+
+    // Map over hunks and populate highlighted field on each line
+    let hunks: Vec<Hunk> = file_diff
+        .hunks
+        .iter()
+        .map(|hunk| Hunk {
+            old_start: hunk.old_start,
+            old_count: hunk.old_count,
+            new_start: hunk.new_start,
+            new_count: hunk.new_count,
+            context: hunk.context.clone(),
+            lines: hunk
+                .lines
+                .iter()
+                .map(|line| {
+                    let highlighted = match line.kind {
+                        LineKind::Removed => line.old_line_no.and_then(|n| {
+                            old_highlighted
+                                .as_ref()
+                                .and_then(|hl| hl.get((n - 1) as usize).cloned())
+                        }),
+                        LineKind::Added | LineKind::Context | _ => line.new_line_no.and_then(|n| {
+                            new_highlighted
+                                .as_ref()
+                                .and_then(|hl| hl.get((n - 1) as usize).cloned())
+                        }),
+                    };
+                    DiffLine {
+                        kind: line.kind.clone(),
+                        content: line.content.clone(),
+                        old_line_no: line.old_line_no,
+                        new_line_no: line.new_line_no,
+                        highlighted,
+                    }
+                })
+                .collect(),
+        })
+        .collect();
+
     Ok(Json(FileDiffResponse {
         path,
         old_path: file_diff.old_path.clone(),
         status: file_diff.status.clone(),
-        hunks: file_diff.hunks.clone(),
+        hunks,
     }))
+}
+
+async fn get_file_content(
+    State(state): State<AppState>,
+    Path((id, file_path)): Path<(Uuid, String)>,
+) -> Result<Json<FileContentResponse>, ApiError> {
+    let review = state.store.get_review(id).await?;
+    let file_diff = review
+        .files
+        .iter()
+        .find(|f| {
+            let effective_path = f
+                .new_path
+                .as_deref()
+                .or(f.old_path.as_deref())
+                .unwrap_or_default();
+            effective_path == file_path
+        })
+        .ok_or_else(|| ApiError::NotFound(format!("file not found: {file_path}")))?;
+
+    let path = file_diff
+        .new_path
+        .clone()
+        .unwrap_or_else(|| file_diff.old_path.clone().unwrap_or_default());
+
+    // Reconstruct the new file content from all hunks
+    let (_, new_content) = reconstruct_file_contents(&file_diff.hunks);
+    let highlighted_lines = state.highlighter.highlight_file(&new_content, &path);
+
+    let ext = std::path::Path::new(&path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
+    let language = state.highlighter.language_name(ext).map(|s| s.to_string());
+
+    let lines: Vec<FileContentLine> = new_content
+        .lines()
+        .enumerate()
+        .map(|(i, content)| FileContentLine {
+            line_no: (i + 1) as u32,
+            content: content.to_string(),
+            highlighted: highlighted_lines.as_ref().and_then(|hl| hl.get(i).cloned()),
+        })
+        .collect();
+
+    Ok(Json(FileContentResponse {
+        path,
+        language,
+        lines,
+    }))
+}
+
+fn reconstruct_file_contents(hunks: &[Hunk]) -> (String, String) {
+    let mut old_lines: BTreeMap<u32, &str> = BTreeMap::new();
+    let mut new_lines: BTreeMap<u32, &str> = BTreeMap::new();
+
+    for hunk in hunks {
+        for line in &hunk.lines {
+            match line.kind {
+                LineKind::Context => {
+                    if let Some(n) = line.old_line_no {
+                        old_lines.insert(n, &line.content);
+                    }
+                    if let Some(n) = line.new_line_no {
+                        new_lines.insert(n, &line.content);
+                    }
+                }
+                LineKind::Removed => {
+                    if let Some(n) = line.old_line_no {
+                        old_lines.insert(n, &line.content);
+                    }
+                }
+                LineKind::Added | _ => {
+                    if let Some(n) = line.new_line_no {
+                        new_lines.insert(n, &line.content);
+                    }
+                }
+            }
+        }
+    }
+
+    let to_content = |lines: &BTreeMap<u32, &str>| -> String {
+        if lines.is_empty() {
+            return String::new();
+        }
+        let max_line = *lines.keys().max().unwrap();
+        let mut content = String::new();
+        for i in 1..=max_line {
+            if let Some(line) = lines.get(&i) {
+                content.push_str(line);
+            }
+            content.push('\n');
+        }
+        content
+    };
+
+    (to_content(&old_lines), to_content(&new_lines))
 }
 
 #[cfg(test)]

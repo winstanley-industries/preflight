@@ -169,6 +169,7 @@ fn parse_hunk(
                 content: String::new(),
                 old_line_no: Some(old_line),
                 new_line_no: Some(new_line),
+                highlighted: None,
             });
             old_line += 1;
             new_line += 1;
@@ -183,6 +184,7 @@ fn parse_hunk(
                         content: content.to_string(),
                         old_line_no: Some(old_line),
                         new_line_no: Some(new_line),
+                        highlighted: None,
                     });
                     old_line += 1;
                     new_line += 1;
@@ -193,6 +195,7 @@ fn parse_hunk(
                         content: content.to_string(),
                         old_line_no: None,
                         new_line_no: Some(new_line),
+                        highlighted: None,
                     });
                     new_line += 1;
                 }
@@ -202,6 +205,7 @@ fn parse_hunk(
                         content: content.to_string(),
                         old_line_no: Some(old_line),
                         new_line_no: None,
+                        highlighted: None,
                     });
                     old_line += 1;
                 }

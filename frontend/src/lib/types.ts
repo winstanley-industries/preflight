@@ -53,6 +53,19 @@ export interface DiffLine {
   content: string;
   old_line_no: number | null;
   new_line_no: number | null;
+  highlighted?: string;
+}
+
+export interface FileContentLine {
+  line_no: number;
+  content: string;
+  highlighted?: string;
+}
+
+export interface FileContentResponse {
+  path: string;
+  language: string | null;
+  lines: FileContentLine[];
 }
 
 export interface ThreadResponse {

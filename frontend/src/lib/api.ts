@@ -3,6 +3,7 @@ import type {
   CommentResponse,
   CreateReviewRequest,
   CreateThreadRequest,
+  FileContentResponse,
   FileDiffResponse,
   FileListEntry,
   ReviewResponse,
@@ -74,6 +75,13 @@ export function getFileDiff(
   path: string,
 ): Promise<FileDiffResponse> {
   return request(`/api/reviews/${reviewId}/files/${path}`);
+}
+
+export function getFileContent(
+  reviewId: string,
+  path: string,
+): Promise<FileContentResponse> {
+  return request(`/api/reviews/${reviewId}/content/${path}`);
 }
 
 // --- Threads ---
