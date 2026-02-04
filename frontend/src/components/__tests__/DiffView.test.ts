@@ -209,8 +209,7 @@ describe("DiffView", () => {
               content: "const x = 1;",
               old_line_no: 1,
               new_line_no: 1,
-              highlighted:
-                '<span class="sy-keyword">const</span> x = 1;',
+              highlighted: '<span class="sy-keyword">const</span> x = 1;',
             },
           ],
         },

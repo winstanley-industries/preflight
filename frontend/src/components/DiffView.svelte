@@ -1,6 +1,10 @@
 <script lang="ts">
   import { getFileDiff, getFileContent } from "../lib/api";
-  import type { FileDiffResponse, FileContentResponse, ThreadResponse } from "../lib/types";
+  import type {
+    FileDiffResponse,
+    FileContentResponse,
+    ThreadResponse,
+  } from "../lib/types";
   import InlineCommentForm from "./InlineCommentForm.svelte";
 
   interface Props {
@@ -117,18 +121,26 @@
   </div>
 {:else if diff}
   <!-- View mode toggle -->
-  <div class="flex items-center gap-2 px-4 py-1.5 border-b border-border bg-bg-surface">
+  <div
+    class="flex items-center gap-2 px-4 py-1.5 border-b border-border bg-bg-surface"
+  >
     <button
-      class="text-xs px-2 py-0.5 rounded cursor-pointer {viewMode === 'diff' ? 'bg-bg-active text-text' : 'text-text-muted hover:text-text'}"
-      onclick={() => { viewMode = "diff"; }}
-    >Diff</button>
+      class="text-xs px-2 py-0.5 rounded cursor-pointer {viewMode === 'diff'
+        ? 'bg-bg-active text-text'
+        : 'text-text-muted hover:text-text'}"
+      onclick={() => {
+        viewMode = "diff";
+      }}>Diff</button
+    >
     <button
-      class="text-xs px-2 py-0.5 rounded cursor-pointer {viewMode === 'file' ? 'bg-bg-active text-text' : 'text-text-muted hover:text-text'}"
+      class="text-xs px-2 py-0.5 rounded cursor-pointer {viewMode === 'file'
+        ? 'bg-bg-active text-text'
+        : 'text-text-muted hover:text-text'}"
       onclick={() => {
         viewMode = "file";
         if (!fileContent) loadFileContent(reviewId, filePath);
-      }}
-    >File</button>
+      }}>File</button
+    >
   </div>
 
   {#if viewMode === "diff"}
@@ -197,7 +209,8 @@
                 class="flex-1 px-2 whitespace-pre leading-6"
                 class:text-diff-add-text={line.kind === "Added"}
                 class:text-diff-remove-text={line.kind === "Removed"}
-              >{@html line.highlighted}</span>
+                >{@html line.highlighted}</span
+              >
               <!-- eslint-enable svelte/no-at-html-tags -->
             {:else}
               <span
@@ -219,7 +232,10 @@
                 selectionStart!,
                 selectionEnd ?? selectionStart!,
               )}
-              lineEnd={Math.max(selectionStart!, selectionEnd ?? selectionStart!)}
+              lineEnd={Math.max(
+                selectionStart!,
+                selectionEnd ?? selectionStart!,
+              )}
               onSubmit={handleThreadCreated}
               onCancel={closeForm}
             />
@@ -235,9 +251,13 @@
     <div class="font-mono text-sm">
       {#each fileContent.lines as line (line.line_no)}
         {@const hasThread = threadLines.has(line.line_no)}
-        <div class="group flex hover:brightness-125 transition-[filter]"
-             id={`L${line.line_no}`}>
-          <span class="w-12 shrink-0 text-right pr-2 select-none text-text-faint text-xs leading-6">
+        <div
+          class="group flex hover:brightness-125 transition-[filter]"
+          id={`L${line.line_no}`}
+        >
+          <span
+            class="w-12 shrink-0 text-right pr-2 select-none text-text-faint text-xs leading-6"
+          >
             {line.line_no}
           </span>
           <span class="w-6 shrink-0 text-center select-none leading-6">
@@ -247,10 +267,14 @@
           </span>
           {#if line.highlighted}
             <!-- eslint-disable svelte/no-at-html-tags -->
-            <span class="flex-1 px-2 whitespace-pre leading-6">{@html line.highlighted}</span>
+            <span class="flex-1 px-2 whitespace-pre leading-6"
+              >{@html line.highlighted}</span
+            >
             <!-- eslint-enable svelte/no-at-html-tags -->
           {:else}
-            <span class="flex-1 px-2 whitespace-pre leading-6">{line.content}</span>
+            <span class="flex-1 px-2 whitespace-pre leading-6"
+              >{line.content}</span
+            >
           {/if}
         </div>
       {/each}

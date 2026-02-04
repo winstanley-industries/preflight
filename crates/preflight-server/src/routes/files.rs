@@ -93,13 +93,11 @@ async fn get_file_diff(
                                 .as_ref()
                                 .and_then(|hl| hl.get((n - 1) as usize).cloned())
                         }),
-                        LineKind::Added | LineKind::Context | _ => {
-                            line.new_line_no.and_then(|n| {
-                                new_highlighted
-                                    .as_ref()
-                                    .and_then(|hl| hl.get((n - 1) as usize).cloned())
-                            })
-                        }
+                        LineKind::Added | LineKind::Context | _ => line.new_line_no.and_then(|n| {
+                            new_highlighted
+                                .as_ref()
+                                .and_then(|hl| hl.get((n - 1) as usize).cloned())
+                        }),
                     };
                     DiffLine {
                         kind: line.kind.clone(),
@@ -152,10 +150,7 @@ async fn get_file_content(
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("");
-    let language = state
-        .highlighter
-        .language_name(ext)
-        .map(|s| s.to_string());
+    let language = state.highlighter.language_name(ext).map(|s| s.to_string());
 
     let lines: Vec<FileContentLine> = new_content
         .lines()
@@ -163,9 +158,7 @@ async fn get_file_content(
         .map(|(i, content)| FileContentLine {
             line_no: (i + 1) as u32,
             content: content.to_string(),
-            highlighted: highlighted_lines
-                .as_ref()
-                .and_then(|hl| hl.get(i).cloned()),
+            highlighted: highlighted_lines.as_ref().and_then(|hl| hl.get(i).cloned()),
         })
         .collect();
 

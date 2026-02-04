@@ -6,6 +6,12 @@ pub struct Highlighter {
     syntax_set: SyntaxSet,
 }
 
+impl Default for Highlighter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Highlighter {
     pub fn new() -> Self {
         Self {
@@ -69,8 +75,16 @@ mod tests {
         let lines = hl.highlight_file("fn main() {}\n", "test.rs").unwrap();
         assert_eq!(lines.len(), 1);
         // "fn" should be wrapped in a span with a sy- prefixed class
-        assert!(lines[0].contains("sy-"), "expected sy- class prefix in: {}", lines[0]);
-        assert!(lines[0].contains("fn"), "expected 'fn' keyword in: {}", lines[0]);
+        assert!(
+            lines[0].contains("sy-"),
+            "expected sy- class prefix in: {}",
+            lines[0]
+        );
+        assert!(
+            lines[0].contains("fn"),
+            "expected 'fn' keyword in: {}",
+            lines[0]
+        );
     }
 
     #[test]
@@ -91,11 +105,16 @@ mod tests {
     #[test]
     fn escapes_html_entities() {
         let hl = highlighter();
-        let lines = hl.highlight_file("let x = a < b && c > d;\n", "test.rs").unwrap();
+        let lines = hl
+            .highlight_file("let x = a < b && c > d;\n", "test.rs")
+            .unwrap();
         assert_eq!(lines.len(), 1);
         // Should contain escaped entities, not raw < or >
-        assert!(lines[0].contains("&lt;") || lines[0].contains("&amp;"),
-            "expected HTML escaping in: {}", lines[0]);
+        assert!(
+            lines[0].contains("&lt;") || lines[0].contains("&amp;"),
+            "expected HTML escaping in: {}",
+            lines[0]
+        );
     }
 
     #[test]
@@ -119,7 +138,10 @@ mod tests {
         let lines = hl.highlight_file("fn main() {}\n", "test.rs").unwrap();
         // Individual line strings should not end with \n
         for line in &lines {
-            assert!(!line.ends_with('\n'), "line should not end with newline: {line}");
+            assert!(
+                !line.ends_with('\n'),
+                "line should not end with newline: {line}"
+            );
         }
     }
 }
