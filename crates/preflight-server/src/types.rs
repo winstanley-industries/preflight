@@ -52,6 +52,12 @@ pub struct RevisionQuery {
     pub revision: Option<u32>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct InterdiffQuery {
+    pub from: u32,
+    pub to: u32,
+}
+
 // --- Responses ---
 
 #[derive(Debug, Serialize)]
