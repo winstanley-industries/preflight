@@ -42,9 +42,13 @@
     files.find((f) => f.path === selectedFile)?.status ?? "Modified",
   );
 
-  // Interdiff is available but not used by default - each revision shows its full diff vs base
-  // Future: add a toggle to enable interdiff mode for comparing adjacent revisions
-  let interdiffParams = $state<{ from: number; to: number } | null>(null);
+  // Interdiff mode: when enabled, show only changes since previous revision
+  let showInterdiff = $state(false);
+  let interdiffParams = $derived(
+    showInterdiff && selectedRevision > 1
+      ? { from: selectedRevision - 1, to: selectedRevision }
+      : null,
+  );
 
   async function load() {
     try {
@@ -157,12 +161,27 @@
 
     <!-- Revision timeline -->
     {#if revisions.length > 0}
-      <RevisionTimeline
-        {revisions}
-        {selectedRevision}
-        onSelect={selectRevision}
-        onRefresh={handleRefresh}
-      />
+      <div class="flex items-center border-b border-border shrink-0">
+        <div class="flex-1">
+          <RevisionTimeline
+            {revisions}
+            {selectedRevision}
+            onSelect={selectRevision}
+            onRefresh={handleRefresh}
+          />
+        </div>
+        {#if selectedRevision > 1}
+          <button
+            class="px-3 py-1 mr-2 text-xs rounded {showInterdiff
+              ? 'bg-accent text-white'
+              : 'bg-bg-hover text-text-muted hover:text-text'} transition-colors"
+            onclick={() => (showInterdiff = !showInterdiff)}
+            title="Show only changes since revision {selectedRevision - 1}"
+          >
+            Δ {selectedRevision - 1}→{selectedRevision}
+          </button>
+        {/if}
+      </div>
       {#if refreshMessage}
         <div
           class="px-4 py-1 text-xs text-text-faint bg-bg-surface border-b border-border shrink-0"

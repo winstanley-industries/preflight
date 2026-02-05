@@ -39,7 +39,7 @@
 </script>
 
 <div
-  class="flex items-center gap-1 px-4 py-1.5 border-b border-border bg-bg-surface shrink-0 overflow-x-auto"
+  class="flex items-center gap-1 px-4 py-1.5 bg-bg-surface shrink-0 overflow-x-auto"
 >
   <span class="text-xs text-text-faint mr-1 shrink-0">Revisions</span>
 
