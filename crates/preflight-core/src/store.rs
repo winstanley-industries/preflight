@@ -1,6 +1,5 @@
 use async_trait::async_trait;
 
-use crate::diff::FileDiff;
 use crate::review::{AuthorType, CommentThread, Review, ReviewStatus, ThreadOrigin, ThreadStatus};
 use uuid::Uuid;
 
@@ -10,16 +9,14 @@ pub struct ReviewSummary {
     pub id: Uuid,
     pub title: Option<String>,
     pub status: ReviewStatus,
-    pub file_count: usize,
     pub thread_count: usize,
 }
 
 /// Input for creating a new review.
 pub struct CreateReviewInput {
     pub title: Option<String>,
-    pub files: Vec<FileDiff>,
-    pub repo_path: Option<String>,
-    pub base_ref: Option<String>,
+    pub repo_path: String,
+    pub base_ref: String,
 }
 
 /// Input for creating a new comment thread.

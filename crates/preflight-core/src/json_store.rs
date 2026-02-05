@@ -60,7 +60,6 @@ impl ReviewStore for JsonFileStore {
             status: ReviewStatus::Open,
             created_at: now,
             updated_at: now,
-            files: input.files,
             repo_path: input.repo_path,
             base_ref: input.base_ref,
         };
@@ -94,7 +93,6 @@ impl ReviewStore for JsonFileStore {
                     id: review.id,
                     title: review.title.clone(),
                     status: review.status.clone(),
-                    file_count: review.files.len(),
                     thread_count,
                 }
             })
@@ -136,6 +134,8 @@ impl ReviewStore for JsonFileStore {
             comments: vec![initial_comment],
             created_at: now,
             updated_at: now,
+            revision_number: None,
+            content_snippet: None,
         };
         state.threads.insert(thread.id, thread.clone());
         self.persist(&state).await?;
@@ -198,7 +198,6 @@ impl ReviewStore for JsonFileStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::diff::{FileDiff, FileStatus};
     use crate::review::{AuthorType, ThreadOrigin};
     use tempfile::TempDir;
 
@@ -209,22 +208,12 @@ mod tests {
         (store, dir)
     }
 
-    fn sample_files() -> Vec<FileDiff> {
-        vec![FileDiff {
-            old_path: Some("src/main.rs".into()),
-            new_path: Some("src/main.rs".into()),
-            status: FileStatus::Modified,
-            hunks: vec![],
-        }]
-    }
-
     async fn create_review_with_store(store: &JsonFileStore) -> Review {
         store
             .create_review(CreateReviewInput {
                 title: Some("Test".into()),
-                files: sample_files(),
-                repo_path: None,
-                base_ref: None,
+                repo_path: "/tmp/test-repo".into(),
+                base_ref: "HEAD".into(),
             })
             .await
             .unwrap()
@@ -236,15 +225,13 @@ mod tests {
         let review = store
             .create_review(CreateReviewInput {
                 title: Some("Test review".into()),
-                files: sample_files(),
-                repo_path: None,
-                base_ref: None,
+                repo_path: "/tmp/test-repo".into(),
+                base_ref: "HEAD".into(),
             })
             .await
             .unwrap();
         assert_eq!(review.title.as_deref(), Some("Test review"));
         assert_eq!(review.status, ReviewStatus::Open);
-        assert_eq!(review.files.len(), 1);
         let fetched = store.get_review(review.id).await.unwrap();
         assert_eq!(fetched.id, review.id);
     }
@@ -263,18 +250,16 @@ mod tests {
         store
             .create_review(CreateReviewInput {
                 title: Some("First".into()),
-                files: sample_files(),
-                repo_path: None,
-                base_ref: None,
+                repo_path: "/tmp/repo1".into(),
+                base_ref: "HEAD".into(),
             })
             .await
             .unwrap();
         store
             .create_review(CreateReviewInput {
                 title: Some("Second".into()),
-                files: vec![],
-                repo_path: None,
-                base_ref: None,
+                repo_path: "/tmp/repo2".into(),
+                base_ref: "HEAD".into(),
             })
             .await
             .unwrap();
@@ -288,9 +273,8 @@ mod tests {
         let review = store
             .create_review(CreateReviewInput {
                 title: None,
-                files: vec![],
-                repo_path: None,
-                base_ref: None,
+                repo_path: "/tmp/repo".into(),
+                base_ref: "HEAD".into(),
             })
             .await
             .unwrap();
@@ -311,9 +295,8 @@ mod tests {
             store
                 .create_review(CreateReviewInput {
                     title: Some("Persisted".into()),
-                    files: sample_files(),
-                    repo_path: None,
-                    base_ref: None,
+                    repo_path: "/tmp/repo".into(),
+                    base_ref: "HEAD".into(),
                 })
                 .await
                 .unwrap();
@@ -485,18 +468,17 @@ mod tests {
         let review = store
             .create_review(CreateReviewInput {
                 title: Some("Repo test".into()),
-                files: sample_files(),
-                repo_path: Some("/tmp/fake-repo".into()),
-                base_ref: Some("HEAD~1".into()),
+                repo_path: "/tmp/fake-repo".into(),
+                base_ref: "HEAD~1".into(),
             })
             .await
             .unwrap();
-        assert_eq!(review.repo_path.as_deref(), Some("/tmp/fake-repo"));
-        assert_eq!(review.base_ref.as_deref(), Some("HEAD~1"));
+        assert_eq!(review.repo_path, "/tmp/fake-repo");
+        assert_eq!(review.base_ref, "HEAD~1");
 
         let fetched = store.get_review(review.id).await.unwrap();
-        assert_eq!(fetched.repo_path.as_deref(), Some("/tmp/fake-repo"));
-        assert_eq!(fetched.base_ref.as_deref(), Some("HEAD~1"));
+        assert_eq!(fetched.repo_path, "/tmp/fake-repo");
+        assert_eq!(fetched.base_ref, "HEAD~1");
     }
 
     #[tokio::test]
