@@ -1,14 +1,23 @@
 <script lang="ts">
-  import { getReview, listFiles, listThreads } from "../lib/api";
+  import {
+    getReview,
+    listFiles,
+    listRevisions,
+    listThreads,
+    createRevision,
+    ApiError,
+  } from "../lib/api";
   import { navigate } from "../lib/router.svelte";
   import type {
     FileListEntry,
     ReviewResponse,
+    RevisionResponse,
     ThreadResponse,
   } from "../lib/types";
   import FileTree from "./FileTree.svelte";
   import DiffView from "./DiffView.svelte";
   import ThreadPanel from "./ThreadPanel.svelte";
+  import RevisionTimeline from "./RevisionTimeline.svelte";
 
   interface Props {
     reviewId: string;
@@ -19,8 +28,11 @@
   let review = $state<ReviewResponse | null>(null);
   let files = $state<FileListEntry[]>([]);
   let threads = $state<ThreadResponse[]>([]);
+  let revisions = $state<RevisionResponse[]>([]);
+  let selectedRevision = $state<number>(0);
   let selectedFile = $state<string | null>(null);
   let error = $state<string | null>(null);
+  let refreshMessage = $state<string | null>(null);
   let threadsPanelOpen = $state(true);
   let highlightThreadId = $state<string | null>(null);
   let navigateToLine = $state<number | null>(null);
@@ -32,17 +44,57 @@
 
   async function load() {
     try {
-      const [r, f] = await Promise.all([
+      const [r, revs] = await Promise.all([
         getReview(reviewId),
-        listFiles(reviewId),
+        listRevisions(reviewId),
       ]);
       review = r;
+      revisions = revs;
+      const latest =
+        revs.length > 0
+          ? Math.max(...revs.map((rev) => rev.revision_number))
+          : 0;
+      selectedRevision = latest;
+      const f = await listFiles(reviewId, latest || undefined);
       files = f;
       if (f.length > 0 && !selectedFile) {
         selectedFile = f[0].path;
       }
     } catch (e: unknown) {
       error = e instanceof Error ? e.message : "Failed to load review";
+    }
+  }
+
+  async function selectRevision(revisionNumber: number) {
+    selectedRevision = revisionNumber;
+    try {
+      files = await listFiles(reviewId, revisionNumber);
+      // Keep selected file if it still exists in the new file list
+      if (selectedFile && !files.find((f) => f.path === selectedFile)) {
+        selectedFile = files.length > 0 ? files[0].path : null;
+      }
+    } catch (e: unknown) {
+      error = e instanceof Error ? e.message : "Failed to load files";
+    }
+  }
+
+  async function handleRefresh() {
+    refreshMessage = null;
+    try {
+      await createRevision(reviewId, { trigger: "Manual" });
+      const revs = await listRevisions(reviewId);
+      revisions = revs;
+      const latest = Math.max(...revs.map((rev) => rev.revision_number));
+      await selectRevision(latest);
+    } catch (e: unknown) {
+      if (e instanceof ApiError && e.status === 400) {
+        refreshMessage = "No changes detected";
+        setTimeout(() => {
+          refreshMessage = null;
+        }, 3000);
+      } else {
+        error = e instanceof Error ? e.message : "Failed to create revision";
+      }
     }
   }
 
@@ -97,6 +149,23 @@
       </span>
     </header>
 
+    <!-- Revision timeline -->
+    {#if revisions.length > 0}
+      <RevisionTimeline
+        {revisions}
+        {selectedRevision}
+        onSelect={selectRevision}
+        onRefresh={handleRefresh}
+      />
+      {#if refreshMessage}
+        <div
+          class="px-4 py-1 text-xs text-text-faint bg-bg-surface border-b border-border shrink-0"
+        >
+          {refreshMessage}
+        </div>
+      {/if}
+    {/if}
+
     <!-- Three-panel body -->
     <div class="flex flex-1 min-h-0">
       <!-- File tree -->
@@ -120,6 +189,7 @@
             filePath={selectedFile}
             {threads}
             fileStatus={selectedFileStatus}
+            revision={selectedRevision || undefined}
             {navigateToLine}
             onDiffLinesKnown={(lines) => {
               diffLines = lines;

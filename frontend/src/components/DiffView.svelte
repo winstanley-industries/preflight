@@ -14,6 +14,7 @@
     filePath: string;
     threads: ThreadResponse[];
     fileStatus: FileStatus;
+    revision?: number;
     navigateToLine?: number | null;
     onThreadCreated?: (threadId: string) => void;
     onDiffLinesKnown?: (lines: Set<number>) => void;
@@ -24,6 +25,7 @@
     filePath,
     threads,
     fileStatus,
+    revision,
     navigateToLine = null,
     onThreadCreated,
     onDiffLinesKnown,
@@ -125,7 +127,7 @@
     }
   }
 
-  async function loadDiff(rid: string, path: string) {
+  async function loadDiff(rid: string, path: string, rev?: number) {
     loading = true;
     error = null;
     closeForm();
@@ -133,7 +135,7 @@
     fileContent = null;
     fileVersion = "new";
     try {
-      diff = await getFileDiff(rid, path);
+      diff = await getFileDiff(rid, path, rev);
     } catch (e: unknown) {
       error = e instanceof Error ? e.message : "Failed to load diff";
       diff = null;
@@ -143,7 +145,7 @@
   }
 
   $effect(() => {
-    loadDiff(reviewId, filePath);
+    loadDiff(reviewId, filePath, revision);
   });
 
   // Set of all new-side line numbers present in the diff
