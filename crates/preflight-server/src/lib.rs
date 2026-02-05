@@ -28,6 +28,7 @@ pub fn app(store: Arc<dyn ReviewStore>) -> Router {
         .nest("/api/reviews", routes::reviews::router())
         .nest("/api/reviews", routes::files::router())
         .nest("/api/reviews", routes::files::content_router())
+        .nest("/api/reviews", routes::files::interdiff_router())
         .nest("/api/reviews", routes::revisions::router())
         .nest("/api/reviews", routes::threads::review_router())
         .nest("/api/threads", routes::threads::thread_router())

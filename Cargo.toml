@@ -23,3 +23,4 @@ clap = { version = "4.5.57", features = ["derive", "env"] }
 reqwest = { version = "0.13.1", default-features = false, features = ["json", "rustls"] }
 rmcp = { version = "0.14.0", features = ["server", "transport-io"] }
 schemars = "1.2.1"
+similar = "2.7.0"

@@ -10,9 +10,10 @@ use uuid::Uuid;
 use crate::error::ApiError;
 use crate::state::AppState;
 use crate::types::{
-    FileContentLine, FileContentResponse, FileDiffResponse, FileListEntry, RevisionQuery,
+    FileContentLine, FileContentResponse, FileDiffResponse, FileListEntry, InterdiffQuery,
+    RevisionQuery,
 };
-use preflight_core::diff::{DiffLine, Hunk, LineKind};
+use preflight_core::diff::{DiffLine, FileStatus, Hunk, LineKind};
 use preflight_core::file_reader;
 
 #[derive(Debug, Deserialize)]
@@ -30,6 +31,11 @@ pub fn router() -> axum::Router<AppState> {
 pub fn content_router() -> axum::Router<AppState> {
     use axum::routing::get;
     axum::Router::new().route("/{id}/content/{*path}", get(get_file_content))
+}
+
+pub fn interdiff_router() -> axum::Router<AppState> {
+    use axum::routing::get;
+    axum::Router::new().route("/{id}/interdiff/{*path}", get(get_file_interdiff))
 }
 
 async fn list_files(
@@ -133,6 +139,65 @@ async fn get_file_diff(
         old_path: file_diff.old_path.clone(),
         status: file_diff.status.clone(),
         hunks,
+    }))
+}
+
+async fn get_file_interdiff(
+    State(state): State<AppState>,
+    Path((id, file_path)): Path<(Uuid, String)>,
+    Query(query): Query<InterdiffQuery>,
+) -> Result<Json<FileDiffResponse>, ApiError> {
+    let review = state.store.get_review(id).await?;
+    let from_revision = state.store.get_revision(id, query.from).await?;
+    let to_revision = state.store.get_revision(id, query.to).await?;
+
+    // Find the file in the "to" revision (or "from" if it was deleted)
+    let to_file = to_revision.files.iter().find(|f| {
+        let p = f
+            .new_path
+            .as_deref()
+            .or(f.old_path.as_deref())
+            .unwrap_or_default();
+        p == file_path
+    });
+    let from_file = from_revision.files.iter().find(|f| {
+        let p = f
+            .new_path
+            .as_deref()
+            .or(f.old_path.as_deref())
+            .unwrap_or_default();
+        p == file_path
+    });
+
+    if to_file.is_none() && from_file.is_none() {
+        return Err(ApiError::NotFound(format!("file not found: {file_path}")));
+    }
+
+    let from_hunks = from_file.map(|f| f.hunks.as_slice()).unwrap_or(&[]);
+    let to_hunks = to_file.map(|f| f.hunks.as_slice()).unwrap_or(&[]);
+
+    // Read the base content of the file (at the review's base_ref)
+    let repo_path = std::path::Path::new(&review.repo_path);
+    let base_content =
+        preflight_core::file_reader::read_old_file(repo_path, &file_path, &review.base_ref)
+            .unwrap_or_default();
+
+    let interdiff_hunks =
+        preflight_core::interdiff::compute_interdiff(&base_content, from_hunks, to_hunks);
+
+    let status = if from_file.is_none() {
+        FileStatus::Added
+    } else if to_file.is_none() {
+        FileStatus::Deleted
+    } else {
+        FileStatus::Modified
+    };
+
+    Ok(Json(FileDiffResponse {
+        path: file_path,
+        old_path: None,
+        status,
+        hunks: interdiff_hunks,
     }))
 }
 
