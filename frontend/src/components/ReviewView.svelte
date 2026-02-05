@@ -72,13 +72,15 @@
   }
 
   async function selectRevision(revisionNumber: number) {
-    selectedRevision = revisionNumber;
     try {
-      files = await listFiles(reviewId, revisionNumber);
-      // Keep selected file if it still exists in the new file list
-      if (selectedFile && !files.find((f) => f.path === selectedFile)) {
-        selectedFile = files.length > 0 ? files[0].path : null;
+      const newFiles = await listFiles(reviewId, revisionNumber);
+      // Check if current file exists in new revision before updating state
+      const currentFileExists = selectedFile && newFiles.find((f) => f.path === selectedFile);
+      if (!currentFileExists) {
+        selectedFile = newFiles.length > 0 ? newFiles[0].path : null;
       }
+      files = newFiles;
+      selectedRevision = revisionNumber;
     } catch (e: unknown) {
       error = e instanceof Error ? e.message : "Failed to load files";
     }
