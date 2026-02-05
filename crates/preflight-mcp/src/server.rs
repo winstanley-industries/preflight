@@ -49,6 +49,14 @@ pub struct RespondToCommentInput {
     pub body: String,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SubmitRevisionInput {
+    #[schemars(description = "UUID of the review to create a new revision for")]
+    pub review_id: String,
+    #[schemars(description = "Description of what was changed")]
+    pub message: Option<String>,
+}
+
 fn format_error(e: ClientError) -> String {
     e.to_string()
 }
@@ -157,6 +165,30 @@ impl PreflightMcp {
             .map_err(format_error)?;
 
         serde_json::to_string_pretty(&comment).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "Submit a new revision after making code changes in response to review feedback"
+    )]
+    async fn submit_revision(
+        &self,
+        Parameters(input): Parameters<SubmitRevisionInput>,
+    ) -> Result<String, String> {
+        let body = serde_json::json!({
+            "trigger": "Agent",
+            "message": input.message,
+        });
+
+        let revision: serde_json::Value = self
+            .client
+            .post(
+                &format!("/api/reviews/{}/revisions", input.review_id),
+                &body,
+            )
+            .await
+            .map_err(format_error)?;
+
+        serde_json::to_string_pretty(&revision).map_err(|e| e.to_string())
     }
 }
 
