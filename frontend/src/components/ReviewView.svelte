@@ -42,11 +42,9 @@
     files.find((f) => f.path === selectedFile)?.status ?? "Modified",
   );
 
-  let interdiffParams = $derived(
-    selectedRevision > 1
-      ? { from: selectedRevision - 1, to: selectedRevision }
-      : null,
-  );
+  // Interdiff is available but not used by default - each revision shows its full diff vs base
+  // Future: add a toggle to enable interdiff mode for comparing adjacent revisions
+  let interdiffParams = $state<{ from: number; to: number } | null>(null);
 
   async function load() {
     try {
