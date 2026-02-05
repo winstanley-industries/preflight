@@ -120,7 +120,6 @@
             filePath={selectedFile}
             {threads}
             fileStatus={selectedFileStatus}
-            hasRepoPath={review.has_repo_path}
             {navigateToLine}
             onDiffLinesKnown={(lines) => {
               diffLines = lines;

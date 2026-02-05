@@ -14,6 +14,7 @@ export type ThreadOrigin =
 export type ThreadStatus = "Open" | "Resolved";
 export type AuthorType = "Human" | "Agent";
 export type LineKind = "Context" | "Added" | "Removed";
+export type RevisionTrigger = "Agent" | "Manual";
 
 // --- Response types ---
 
@@ -23,9 +24,19 @@ export interface ReviewResponse {
   status: ReviewStatus;
   file_count: number;
   thread_count: number;
-  has_repo_path: boolean;
+  revision_count: number;
   created_at: string;
   updated_at: string;
+}
+
+export interface RevisionResponse {
+  id: string;
+  review_id: string;
+  revision_number: number;
+  trigger: RevisionTrigger;
+  message: string | null;
+  file_count: number;
+  created_at: string;
 }
 
 export interface FileListEntry {
@@ -93,9 +104,13 @@ export interface CommentResponse {
 
 export interface CreateReviewRequest {
   title?: string;
-  diff: string;
-  repo_path?: string;
-  base_ref?: string;
+  repo_path: string;
+  base_ref: string;
+}
+
+export interface CreateRevisionRequest {
+  trigger: RevisionTrigger;
+  message?: string;
 }
 
 export interface UpdateReviewStatusRequest {

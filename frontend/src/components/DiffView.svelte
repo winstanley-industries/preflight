@@ -14,7 +14,6 @@
     filePath: string;
     threads: ThreadResponse[];
     fileStatus: FileStatus;
-    hasRepoPath: boolean;
     navigateToLine?: number | null;
     onThreadCreated?: (threadId: string) => void;
     onDiffLinesKnown?: (lines: Set<number>) => void;
@@ -25,7 +24,6 @@
     filePath,
     threads,
     fileStatus,
-    hasRepoPath,
     navigateToLine = null,
     onThreadCreated,
     onDiffLinesKnown,
@@ -177,7 +175,7 @@
         const el = document.getElementById(`L${target}`);
         el?.scrollIntoView({ behavior: "smooth", block: "center" });
       });
-    } else if (hasRepoPath) {
+    } else {
       // Line is outside the diff — switch to file view
       viewMode = "file";
       if (!fileContent || fileVersion !== "new") {
@@ -220,13 +218,9 @@
       }}>Diff</button
     >
     <button
-      class="text-xs px-2 py-0.5 rounded {viewMode === 'file'
+      class="text-xs px-2 py-0.5 rounded cursor-pointer {viewMode === 'file'
         ? 'bg-bg-active text-text'
-        : hasRepoPath
-          ? 'text-text-muted hover:text-text cursor-pointer'
-          : 'text-text-faint cursor-not-allowed'}"
-      disabled={!hasRepoPath}
-      title={!hasRepoPath ? "Full file view requires a repo path" : undefined}
+        : 'text-text-muted hover:text-text'}"
       onclick={() => {
         viewMode = "file";
         if (!fileContent || fileVersion !== "new") {

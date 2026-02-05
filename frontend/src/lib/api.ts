@@ -2,11 +2,13 @@ import type {
   AddCommentRequest,
   CommentResponse,
   CreateReviewRequest,
+  CreateRevisionRequest,
   CreateThreadRequest,
   FileContentResponse,
   FileDiffResponse,
   FileListEntry,
   ReviewResponse,
+  RevisionResponse,
   ThreadResponse,
   UpdateReviewStatusRequest,
   UpdateThreadStatusRequest,
@@ -64,17 +66,39 @@ export function updateReviewStatus(
   });
 }
 
+// --- Revisions ---
+
+export function listRevisions(reviewId: string): Promise<RevisionResponse[]> {
+  return request(`/api/reviews/${reviewId}/revisions`);
+}
+
+export function createRevision(
+  reviewId: string,
+  req: CreateRevisionRequest,
+): Promise<RevisionResponse> {
+  return request(`/api/reviews/${reviewId}/revisions`, {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
+}
+
 // --- Files ---
 
-export function listFiles(reviewId: string): Promise<FileListEntry[]> {
-  return request(`/api/reviews/${reviewId}/files`);
+export function listFiles(
+  reviewId: string,
+  revision?: number,
+): Promise<FileListEntry[]> {
+  const params = revision != null ? `?revision=${revision}` : "";
+  return request(`/api/reviews/${reviewId}/files${params}`);
 }
 
 export function getFileDiff(
   reviewId: string,
   path: string,
+  revision?: number,
 ): Promise<FileDiffResponse> {
-  return request(`/api/reviews/${reviewId}/files/${path}`);
+  const params = revision != null ? `?revision=${revision}` : "";
+  return request(`/api/reviews/${reviewId}/files/${path}${params}`);
 }
 
 export function getFileContent(

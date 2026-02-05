@@ -100,7 +100,6 @@ async function renderDiff(
       reviewId: "rev-1",
       filePath: "src/main.ts",
       fileStatus: "Modified" as const,
-      hasRepoPath: true,
       threads,
       ...overrides,
     },
@@ -224,7 +223,6 @@ describe("DiffView", () => {
         reviewId: "rev-1",
         filePath: "src/main.ts",
         fileStatus: "Modified" as const,
-        hasRepoPath: true,
         threads: [],
       },
     });
@@ -256,12 +254,6 @@ describe("DiffView", () => {
   });
 
   // --- File view toggle ---
-
-  it("File button is disabled when hasRepoPath is false", async () => {
-    await renderDiff([], { hasRepoPath: false });
-    const fileBtn = screen.getByRole("button", { name: "File" });
-    expect(fileBtn).toBeDisabled();
-  });
 
   it("clicking File button switches to file view and loads content", async () => {
     const user = userEvent.setup();
@@ -375,7 +367,6 @@ describe("DiffView", () => {
         reviewId: "rev-1",
         filePath: "src/main.ts",
         fileStatus: "Modified" as const,
-        hasRepoPath: true,
         threads: [],
         navigateToLine: 2,
       },
@@ -402,7 +393,6 @@ describe("DiffView", () => {
         reviewId: "rev-1",
         filePath: "src/main.ts",
         fileStatus: "Modified" as const,
-        hasRepoPath: true,
         threads: [],
         navigateToLine: 7,
       },
@@ -415,12 +405,6 @@ describe("DiffView", () => {
       "src/main.ts",
       "new",
     );
-  });
-
-  it("navigateToLine does not switch to file view when hasRepoPath is false", async () => {
-    await renderDiff([], { hasRepoPath: false, navigateToLine: 7 });
-    // Should stay in diff view — no file content loaded
-    expect(mockGetFileContent).not.toHaveBeenCalled();
   });
 
   // --- onDiffLinesKnown ---
