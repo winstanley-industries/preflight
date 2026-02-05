@@ -43,6 +43,8 @@ async fn create_thread(
         origin: request.origin,
         initial_comment_body: request.body,
         initial_comment_author: request.author_type,
+        revision_number: None,
+        content_snippet: None,
     };
     let thread = state.store.create_thread(input).await?;
     Ok(Json(ThreadResponse {

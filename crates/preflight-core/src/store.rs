@@ -1,6 +1,8 @@
 use async_trait::async_trait;
 
-use crate::review::{AuthorType, CommentThread, Review, ReviewStatus, ThreadOrigin, ThreadStatus};
+use crate::review::{
+    AuthorType, CommentThread, Review, ReviewStatus, ThreadOrigin, ThreadStatus,
+};
 use uuid::Uuid;
 
 /// Summary of a review for listing.
@@ -10,6 +12,7 @@ pub struct ReviewSummary {
     pub title: Option<String>,
     pub status: ReviewStatus,
     pub thread_count: usize,
+    pub file_count: usize,
 }
 
 /// Input for creating a new review.
@@ -28,6 +31,16 @@ pub struct CreateThreadInput {
     pub origin: ThreadOrigin,
     pub initial_comment_body: String,
     pub initial_comment_author: AuthorType,
+    pub revision_number: Option<u32>,
+    pub content_snippet: Option<crate::review::ContentSnippet>,
+}
+
+/// Input for creating a new revision.
+pub struct CreateRevisionInput {
+    pub review_id: Uuid,
+    pub trigger: crate::review::RevisionTrigger,
+    pub message: Option<String>,
+    pub files: Vec<crate::diff::FileDiff>,
 }
 
 /// Input for adding a comment to a thread.
@@ -42,6 +55,7 @@ pub struct AddCommentInput {
 pub enum StoreError {
     ReviewNotFound(Uuid),
     ThreadNotFound(Uuid),
+    RevisionNotFound(Uuid),
     PersistenceError(String),
 }
 
@@ -50,6 +64,7 @@ impl std::fmt::Display for StoreError {
         match self {
             StoreError::ReviewNotFound(id) => write!(f, "review not found: {id}"),
             StoreError::ThreadNotFound(id) => write!(f, "thread not found: {id}"),
+            StoreError::RevisionNotFound(id) => write!(f, "revision not found: {id}"),
             StoreError::PersistenceError(msg) => write!(f, "persistence error: {msg}"),
         }
     }
@@ -92,4 +107,22 @@ pub trait ReviewStore: Send + Sync {
         &self,
         input: AddCommentInput,
     ) -> Result<crate::review::Comment, StoreError>;
+
+    async fn create_revision(
+        &self,
+        input: CreateRevisionInput,
+    ) -> Result<crate::review::Revision, StoreError>;
+    async fn get_revisions(
+        &self,
+        review_id: Uuid,
+    ) -> Result<Vec<crate::review::Revision>, StoreError>;
+    async fn get_revision(
+        &self,
+        review_id: Uuid,
+        revision_number: u32,
+    ) -> Result<crate::review::Revision, StoreError>;
+    async fn get_latest_revision(
+        &self,
+        review_id: Uuid,
+    ) -> Result<crate::review::Revision, StoreError>;
 }
