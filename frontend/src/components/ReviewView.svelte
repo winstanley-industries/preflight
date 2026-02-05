@@ -42,6 +42,12 @@
     files.find((f) => f.path === selectedFile)?.status ?? "Modified",
   );
 
+  let interdiffParams = $derived(
+    selectedRevision > 1
+      ? { from: selectedRevision - 1, to: selectedRevision }
+      : null,
+  );
+
   async function load() {
     try {
       const [r, revs] = await Promise.all([
@@ -190,6 +196,7 @@
             {threads}
             fileStatus={selectedFileStatus}
             revision={selectedRevision || undefined}
+            interdiff={interdiffParams}
             {navigateToLine}
             onDiffLinesKnown={(lines) => {
               diffLines = lines;

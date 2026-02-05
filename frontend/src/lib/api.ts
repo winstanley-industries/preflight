@@ -101,6 +101,17 @@ export function getFileDiff(
   return request(`/api/reviews/${reviewId}/files/${path}${params}`);
 }
 
+export function getFileInterdiff(
+  reviewId: string,
+  path: string,
+  from: number,
+  to: number,
+): Promise<FileDiffResponse> {
+  return request(
+    `/api/reviews/${reviewId}/interdiff/${path}?from=${from}&to=${to}`,
+  );
+}
+
 export function getFileContent(
   reviewId: string,
   path: string,

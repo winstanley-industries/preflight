@@ -1,6 +1,6 @@
 <script lang="ts">
   import { tick } from "svelte";
-  import { getFileDiff, getFileContent } from "../lib/api";
+  import { getFileDiff, getFileInterdiff, getFileContent } from "../lib/api";
   import type {
     FileDiffResponse,
     FileContentResponse,
@@ -15,6 +15,7 @@
     threads: ThreadResponse[];
     fileStatus: FileStatus;
     revision?: number;
+    interdiff?: { from: number; to: number } | null;
     navigateToLine?: number | null;
     onThreadCreated?: (threadId: string) => void;
     onDiffLinesKnown?: (lines: Set<number>) => void;
@@ -26,6 +27,7 @@
     threads,
     fileStatus,
     revision,
+    interdiff = null,
     navigateToLine = null,
     onThreadCreated,
     onDiffLinesKnown,
@@ -127,7 +129,12 @@
     }
   }
 
-  async function loadDiff(rid: string, path: string, rev?: number) {
+  async function loadDiff(
+    rid: string,
+    path: string,
+    rev?: number,
+    inter?: { from: number; to: number } | null,
+  ) {
     loading = true;
     error = null;
     closeForm();
@@ -135,7 +142,11 @@
     fileContent = null;
     fileVersion = "new";
     try {
-      diff = await getFileDiff(rid, path, rev);
+      if (inter) {
+        diff = await getFileInterdiff(rid, path, inter.from, inter.to);
+      } else {
+        diff = await getFileDiff(rid, path, rev);
+      }
     } catch (e: unknown) {
       error = e instanceof Error ? e.message : "Failed to load diff";
       diff = null;
@@ -145,7 +156,7 @@
   }
 
   $effect(() => {
-    loadDiff(reviewId, filePath, revision);
+    loadDiff(reviewId, filePath, revision, interdiff);
   });
 
   // Set of all new-side line numbers present in the diff
