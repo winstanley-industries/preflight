@@ -32,6 +32,9 @@ impl From<preflight_core::store::StoreError> for ApiError {
         match err {
             StoreError::ReviewNotFound(id) => ApiError::NotFound(format!("review not found: {id}")),
             StoreError::ThreadNotFound(id) => ApiError::NotFound(format!("thread not found: {id}")),
+            StoreError::RevisionNotFound(id) => {
+                ApiError::NotFound(format!("revision not found: {id}"))
+            }
             StoreError::PersistenceError(msg) => {
                 ApiError::Internal(format!("persistence error: {msg}"))
             }

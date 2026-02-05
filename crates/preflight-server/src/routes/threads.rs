@@ -134,8 +134,58 @@ mod tests {
         serde_json::from_slice(&bytes).unwrap()
     }
 
+    /// Helper: create a temp git repo with a modification, return (TempDir, repo_path_string).
+    fn setup_test_repo() -> (tempfile::TempDir, String) {
+        use std::process::Command;
+
+        let dir = tempfile::TempDir::new().unwrap();
+        let p = dir.path();
+
+        Command::new("git")
+            .args(["init"])
+            .current_dir(p)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.email", "t@t.com"])
+            .current_dir(p)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.name", "T"])
+            .current_dir(p)
+            .output()
+            .unwrap();
+
+        std::fs::create_dir_all(p.join("src")).unwrap();
+        std::fs::write(p.join("src/main.rs"), "fn main() {}\n").unwrap();
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(p)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "init"])
+            .current_dir(p)
+            .output()
+            .unwrap();
+
+        // Modify the file so there is a diff against HEAD
+        std::fs::write(
+            p.join("src/main.rs"),
+            "use std::io;\n\nfn main() {\n    println!(\"hello\");\n}\n",
+        )
+        .unwrap();
+
+        let repo_path = p.to_str().unwrap().to_string();
+        (dir, repo_path)
+    }
+
     /// Helper: create a review and return its id.
     async fn create_review(app: &axum::Router) -> String {
+        let (_repo_dir, repo_path) = setup_test_repo();
+        // Leak the repo dir so it stays alive for the test
+        Box::leak(Box::new(_repo_dir));
         let response = app
             .clone()
             .oneshot(
@@ -146,7 +196,8 @@ mod tests {
                     .body(Body::from(
                         serde_json::json!({
                             "title": "Thread test review",
-                            "diff": ""
+                            "repo_path": repo_path,
+                            "base_ref": "HEAD"
                         })
                         .to_string(),
                     ))
