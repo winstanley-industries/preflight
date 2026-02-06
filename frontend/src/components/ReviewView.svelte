@@ -87,9 +87,21 @@
     }
   }
 
-  function handleCompare(from: number, to: number) {
+  async function handleCompare(from: number, to: number) {
     compareFrom = from;
-    selectedRevision = to;
+    // Load file list from the "to" revision so we see all files
+    try {
+      const newFiles = await listFiles(reviewId, to);
+      const currentFileExists =
+        selectedFile && newFiles.find((f) => f.path === selectedFile);
+      if (!currentFileExists) {
+        selectedFile = newFiles.length > 0 ? newFiles[0].path : null;
+      }
+      files = newFiles;
+      selectedRevision = to;
+    } catch (e: unknown) {
+      error = e instanceof Error ? e.message : "Failed to load files";
+    }
   }
 
   async function handleRefresh() {
