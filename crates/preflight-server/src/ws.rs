@@ -3,29 +3,10 @@ use axum::{
     extract::ws::{Message, WebSocket, WebSocketUpgrade},
     response::Response,
 };
-use chrono::{DateTime, Utc};
-use serde::Serialize;
+
+pub use preflight_core::ws::{WsEvent, WsEventType};
 
 use crate::state::AppState;
-
-#[derive(Clone, Debug, Serialize)]
-pub struct WsEvent {
-    pub event_type: WsEventType,
-    pub review_id: String,
-    pub payload: serde_json::Value,
-    pub timestamp: DateTime<Utc>,
-}
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum WsEventType {
-    ReviewCreated,
-    ReviewStatusChanged,
-    RevisionCreated,
-    ThreadCreated,
-    CommentAdded,
-    ThreadStatusChanged,
-}
 
 pub async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> Response {
     ws.on_upgrade(|socket| handle_socket(socket, state))
@@ -55,6 +36,7 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Utc;
 
     #[test]
     fn ws_event_serializes_correctly() {
