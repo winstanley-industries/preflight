@@ -13,6 +13,7 @@ pub mod error;
 pub mod routes;
 pub mod state;
 pub mod types;
+pub mod ws;
 
 #[derive(RustEmbed)]
 #[folder = "../../frontend/dist"]
