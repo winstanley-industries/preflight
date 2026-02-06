@@ -54,3 +54,36 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ws_event_serializes_correctly() {
+        let event = WsEvent {
+            event_type: WsEventType::ReviewCreated,
+            review_id: "abc-123".to_string(),
+            payload: serde_json::json!({"id": "abc-123"}),
+            timestamp: Utc::now(),
+        };
+        let json = serde_json::to_string(&event).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["event_type"], "review_created");
+        assert_eq!(parsed["review_id"], "abc-123");
+    }
+
+    #[tokio::test]
+    async fn broadcast_channel_delivers_events() {
+        let (tx, mut rx) = tokio::sync::broadcast::channel::<WsEvent>(16);
+        let event = WsEvent {
+            event_type: WsEventType::ThreadCreated,
+            review_id: "test-id".to_string(),
+            payload: serde_json::json!({}),
+            timestamp: Utc::now(),
+        };
+        tx.send(event.clone()).unwrap();
+        let received = rx.recv().await.unwrap();
+        assert_eq!(received.review_id, "test-id");
+    }
+}
