@@ -3,6 +3,7 @@ use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
 };
+use chrono::Utc;
 use serde::Deserialize;
 use uuid::Uuid;
 
@@ -11,6 +12,7 @@ use crate::state::AppState;
 use crate::types::{
     CommentResponse, CreateThreadRequest, ThreadResponse, UpdateThreadStatusRequest,
 };
+use crate::ws::{WsEvent, WsEventType};
 use preflight_core::store::CreateThreadInput;
 
 /// Routes nested under /api/reviews
@@ -47,7 +49,7 @@ async fn create_thread(
         content_snippet: None,
     };
     let thread = state.store.create_thread(input).await?;
-    Ok(Json(ThreadResponse {
+    let response = ThreadResponse {
         id: thread.id,
         review_id: thread.review_id,
         file_path: thread.file_path,
@@ -67,7 +69,14 @@ async fn create_thread(
             .collect(),
         created_at: thread.created_at,
         updated_at: thread.updated_at,
-    }))
+    };
+    let _ = state.ws_tx.send(WsEvent {
+        event_type: WsEventType::ThreadCreated,
+        review_id: id.to_string(),
+        payload: serde_json::to_value(&response).unwrap(),
+        timestamp: Utc::now(),
+    });
+    Ok(Json(response))
 }
 
 async fn list_threads(
@@ -108,7 +117,21 @@ async fn update_thread_status(
     Path(id): Path<Uuid>,
     Json(request): Json<UpdateThreadStatusRequest>,
 ) -> Result<StatusCode, ApiError> {
-    state.store.update_thread_status(id, request.status).await?;
+    state
+        .store
+        .update_thread_status(id, request.status.clone())
+        .await?;
+    if let Ok(thread) = state.store.get_thread(id).await {
+        let _ = state.ws_tx.send(WsEvent {
+            event_type: WsEventType::ThreadStatusChanged,
+            review_id: thread.review_id.to_string(),
+            payload: serde_json::json!({
+                "thread_id": id.to_string(),
+                "status": request.status
+            }),
+            timestamp: Utc::now(),
+        });
+    }
     Ok(StatusCode::NO_CONTENT)
 }
 

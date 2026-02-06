@@ -90,6 +90,7 @@ pub trait ReviewStore: Send + Sync {
     async fn update_review_status(&self, id: Uuid, status: ReviewStatus) -> Result<(), StoreError>;
 
     async fn create_thread(&self, input: CreateThreadInput) -> Result<CommentThread, StoreError>;
+    async fn get_thread(&self, thread_id: Uuid) -> Result<CommentThread, StoreError>;
     async fn get_threads(
         &self,
         review_id: Uuid,

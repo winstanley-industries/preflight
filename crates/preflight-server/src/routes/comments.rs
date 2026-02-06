@@ -2,11 +2,13 @@ use axum::{
     Json,
     extract::{Path, State},
 };
+use chrono::Utc;
 use uuid::Uuid;
 
 use crate::error::ApiError;
 use crate::state::AppState;
 use crate::types::{AddCommentRequest, CommentResponse};
+use crate::ws::{WsEvent, WsEventType};
 use preflight_core::store::AddCommentInput;
 
 pub fn router() -> axum::Router<AppState> {
@@ -27,12 +29,24 @@ async fn add_comment(
             body: request.body,
         })
         .await?;
-    Ok(Json(CommentResponse {
+    let response = CommentResponse {
         id: comment.id,
         author_type: comment.author_type,
         body: comment.body,
         created_at: comment.created_at,
-    }))
+    };
+    if let Ok(thread) = state.store.get_thread(id).await {
+        let _ = state.ws_tx.send(WsEvent {
+            event_type: WsEventType::CommentAdded,
+            review_id: thread.review_id.to_string(),
+            payload: serde_json::json!({
+                "thread_id": id.to_string(),
+                "comment": serde_json::to_value(&response).unwrap()
+            }),
+            timestamp: Utc::now(),
+        });
+    }
+    Ok(Json(response))
 }
 
 #[cfg(test)]
