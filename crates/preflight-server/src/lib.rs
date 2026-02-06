@@ -20,9 +20,11 @@ pub mod ws;
 struct Assets;
 
 pub fn app(store: Arc<dyn ReviewStore>) -> Router {
+    let (ws_tx, _) = tokio::sync::broadcast::channel(64);
     let state = state::AppState {
         store,
         highlighter: Arc::new(preflight_core::highlight::Highlighter::new()),
+        ws_tx,
     };
     Router::new()
         .route("/api/health", get(health))
