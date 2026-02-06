@@ -36,6 +36,7 @@ pub fn app(store: Arc<dyn ReviewStore>) -> Router {
         .nest("/api/reviews", routes::threads::review_router())
         .nest("/api/threads", routes::threads::thread_router())
         .nest("/api/threads", routes::comments::router())
+        .route("/api/ws", get(ws::ws_handler))
         .fallback(static_handler)
         .with_state(state)
 }
