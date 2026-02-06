@@ -89,15 +89,29 @@
 
   async function handleCompare(from: number, to: number) {
     compareFrom = from;
-    // Load file list from the "to" revision so we see all files
+    // Load file lists from both revisions and merge to show the union
     try {
-      const newFiles = await listFiles(reviewId, to);
-      const currentFileExists =
-        selectedFile && newFiles.find((f) => f.path === selectedFile);
-      if (!currentFileExists) {
-        selectedFile = newFiles.length > 0 ? newFiles[0].path : null;
+      const [fromFiles, toFiles] = await Promise.all([
+        listFiles(reviewId, from),
+        listFiles(reviewId, to),
+      ]);
+      const seen = new Set<string>();
+      const merged: FileListEntry[] = [];
+      for (const f of toFiles) {
+        seen.add(f.path);
+        merged.push(f);
       }
-      files = newFiles;
+      for (const f of fromFiles) {
+        if (!seen.has(f.path)) {
+          merged.push(f);
+        }
+      }
+      const currentFileExists =
+        selectedFile && merged.find((f) => f.path === selectedFile);
+      if (!currentFileExists) {
+        selectedFile = merged.length > 0 ? merged[0].path : null;
+      }
+      files = merged;
       selectedRevision = to;
     } catch (e: unknown) {
       error = e instanceof Error ? e.message : "Failed to load files";
