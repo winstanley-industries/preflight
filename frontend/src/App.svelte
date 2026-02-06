@@ -3,6 +3,7 @@
   import { connect, disconnect } from "./lib/ws";
   import ReviewList from "./components/ReviewList.svelte";
   import ReviewView from "./components/ReviewView.svelte";
+  import ConnectionStatus from "./components/ConnectionStatus.svelte";
 
   const route = $derived(getRoute());
 
@@ -17,3 +18,5 @@
 {:else}
   <ReviewList />
 {/if}
+
+<ConnectionStatus />
