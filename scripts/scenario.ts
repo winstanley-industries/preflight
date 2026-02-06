@@ -1,16 +1,19 @@
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createInterface } from "node:readline/promises";
 
 const BASE_URL = process.env.PREFLIGHT_URL || "http://127.0.0.1:3000";
+const NO_PAUSE = process.argv.includes("--no-pause");
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-const rl = createInterface({ input: process.stdin, output: process.stdout });
+const rl = NO_PAUSE
+  ? null
+  : createInterface({ input: process.stdin, output: process.stdout });
 
 function log(phase: string, msg: string): void {
   console.log(`\n  \x1b[36m[${phase}]\x1b[0m ${msg}`);
@@ -24,11 +27,11 @@ function banner(text: string): void {
 
 async function pause(msg: string): Promise<void> {
   console.log(`\n  \x1b[33m${msg}\x1b[0m`);
-  await rl.question("  Press Enter to continue...");
+  if (rl) await rl.question("  Press Enter to continue...");
 }
 
 function git(repoPath: string, ...args: string[]): string {
-  return execSync(`git ${args.join(" ")}`, {
+  return execFileSync("git", args, {
     cwd: repoPath,
     encoding: "utf-8",
     stdio: ["pipe", "pipe", "pipe"],
@@ -856,11 +859,11 @@ async function main(): Promise<void> {
   console.log(`  Repo path: ${repoPath}`);
   console.log(`  View at:   ${BASE_URL}\n`);
 
-  rl.close();
+  rl?.close();
 }
 
 main().catch((err) => {
   console.error(`\n  \x1b[31mError: ${err.message}\x1b[0m\n`);
-  rl.close();
+  rl?.close();
   process.exit(1);
 });
