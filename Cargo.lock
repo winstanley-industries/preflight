@@ -1218,6 +1218,8 @@ dependencies = [
 name = "preflight-mcp"
 version = "0.1.0"
 dependencies = [
+ "chrono",
+ "futures-util",
  "preflight-core",
  "reqwest",
  "rmcp",
@@ -1225,6 +1227,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "tokio-tungstenite",
  "urlencoding",
 ]
 
