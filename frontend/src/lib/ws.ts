@@ -1,12 +1,14 @@
 import type { WsEvent, WsEventType } from "./types";
 
 type EventCallback = (event: WsEvent) => void;
-type StatusCallback = (status: "connected" | "reconnecting" | "disconnected") => void;
+type StatusCallback = (
+  status: "connected" | "reconnecting" | "disconnected",
+) => void;
 
 let socket: WebSocket | null = null;
-let listeners: Map<WsEventType, Set<EventCallback>> = new Map();
-let reconnectCallbacks: Set<() => void> = new Set();
-let statusCallbacks: Set<StatusCallback> = new Set();
+const listeners: Map<WsEventType, Set<EventCallback>> = new Map();
+const reconnectCallbacks: Set<() => void> = new Set();
+const statusCallbacks: Set<StatusCallback> = new Set();
 let reconnectDelay = 1000;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let intentionallyClosed = false;
@@ -21,7 +23,11 @@ function notifyStatus(status: "connected" | "reconnecting" | "disconnected") {
 }
 
 export function connect(): void {
-  if (socket?.readyState === WebSocket.OPEN || socket?.readyState === WebSocket.CONNECTING) return;
+  if (
+    socket?.readyState === WebSocket.OPEN ||
+    socket?.readyState === WebSocket.CONNECTING
+  )
+    return;
   intentionallyClosed = false;
 
   socket = new WebSocket(getWsUrl());
@@ -58,7 +64,8 @@ export function connect(): void {
       const currentSocket = socket;
       if (currentSocket) {
         currentSocket.onopen = (ev) => {
-          if (origOnOpen && typeof origOnOpen === "function") origOnOpen.call(currentSocket, ev);
+          if (origOnOpen && typeof origOnOpen === "function")
+            origOnOpen.call(currentSocket, ev);
           for (const cb of reconnectCallbacks) cb();
         };
       }
@@ -77,7 +84,10 @@ export function disconnect(): void {
   socket = null;
 }
 
-export function onEvent(type: WsEventType, callback: EventCallback): () => void {
+export function onEvent(
+  type: WsEventType,
+  callback: EventCallback,
+): () => void {
   if (!listeners.has(type)) listeners.set(type, new Set());
   listeners.get(type)!.add(callback);
   return () => listeners.get(type)?.delete(callback);

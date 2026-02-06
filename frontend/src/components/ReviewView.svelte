@@ -156,7 +156,9 @@
     const unsubs = [
       onEvent("review_status_changed", (event) => {
         if (event.review_id !== reviewId || !review) return;
-        const { status } = event.payload as { status: ReviewResponse["status"] };
+        const { status } = event.payload as {
+          status: ReviewResponse["status"];
+        };
         review = { ...review, status };
       }),
       onEvent("revision_created", (event) => {
