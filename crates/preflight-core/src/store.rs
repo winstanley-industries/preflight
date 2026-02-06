@@ -1,8 +1,6 @@
 use async_trait::async_trait;
 
-use crate::review::{
-    AuthorType, CommentThread, Review, ReviewStatus, ThreadOrigin, ThreadStatus,
-};
+use crate::review::{AuthorType, CommentThread, Review, ReviewStatus, ThreadOrigin, ThreadStatus};
 use uuid::Uuid;
 
 /// Summary of a review for listing.

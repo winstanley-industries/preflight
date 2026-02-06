@@ -205,10 +205,7 @@ impl ReviewStore for JsonFileStore {
         Ok(comment)
     }
 
-    async fn create_revision(
-        &self,
-        input: CreateRevisionInput,
-    ) -> Result<Revision, StoreError> {
+    async fn create_revision(&self, input: CreateRevisionInput) -> Result<Revision, StoreError> {
         let mut state = self.state.lock().await;
         if !state.reviews.contains_key(&input.review_id) {
             return Err(StoreError::ReviewNotFound(input.review_id));
@@ -235,10 +232,7 @@ impl ReviewStore for JsonFileStore {
         Ok(revision)
     }
 
-    async fn get_revisions(
-        &self,
-        review_id: Uuid,
-    ) -> Result<Vec<Revision>, StoreError> {
+    async fn get_revisions(&self, review_id: Uuid) -> Result<Vec<Revision>, StoreError> {
         let state = self.state.lock().await;
         if !state.reviews.contains_key(&review_id) {
             return Err(StoreError::ReviewNotFound(review_id));
@@ -270,10 +264,7 @@ impl ReviewStore for JsonFileStore {
             .ok_or(StoreError::RevisionNotFound(review_id))
     }
 
-    async fn get_latest_revision(
-        &self,
-        review_id: Uuid,
-    ) -> Result<Revision, StoreError> {
+    async fn get_latest_revision(&self, review_id: Uuid) -> Result<Revision, StoreError> {
         let state = self.state.lock().await;
         if !state.reviews.contains_key(&review_id) {
             return Err(StoreError::ReviewNotFound(review_id));
