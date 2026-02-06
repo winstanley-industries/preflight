@@ -87,3 +87,7 @@ worktree-clean:
         git branch -d "$branch" 2>/dev/null || true
     done
     @echo "All worktrees cleaned up"
+
+# Run a test scenario against a running server (default: http://127.0.0.1:3000)
+run-scenario:
+    node scripts/scenario.ts
