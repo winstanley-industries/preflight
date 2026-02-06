@@ -8,6 +8,7 @@
     ApiError,
   } from "../lib/api";
   import { navigate } from "../lib/router.svelte";
+  import { onEvent, onReconnect } from "../lib/ws";
   import type {
     FileListEntry,
     ReviewResponse,
@@ -149,6 +150,40 @@
     if (selectedFile) {
       loadThreads(selectedFile);
     }
+  });
+
+  $effect(() => {
+    const unsubs = [
+      onEvent("review_status_changed", (event) => {
+        if (event.review_id !== reviewId || !review) return;
+        const { status } = event.payload as { status: ReviewResponse["status"] };
+        review = { ...review, status };
+      }),
+      onEvent("revision_created", (event) => {
+        if (event.review_id !== reviewId) return;
+        // Refetch revisions and file list
+        listRevisions(reviewId).then((revs) => {
+          revisions = revs;
+          const latest = Math.max(...revs.map((r) => r.revision_number));
+          selectRevision(latest);
+        });
+      }),
+      onEvent("thread_created", (event) => {
+        if (event.review_id !== reviewId) return;
+        if (selectedFile) loadThreads(selectedFile);
+      }),
+      onEvent("comment_added", (event) => {
+        if (event.review_id !== reviewId) return;
+        if (selectedFile) loadThreads(selectedFile);
+      }),
+      onEvent("thread_status_changed", (event) => {
+        if (event.review_id !== reviewId) return;
+        if (selectedFile) loadThreads(selectedFile);
+      }),
+      onReconnect(() => load()),
+    ];
+
+    return () => unsubs.forEach((fn) => fn());
   });
 </script>
 
