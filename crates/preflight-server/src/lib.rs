@@ -13,15 +13,18 @@ pub mod error;
 pub mod routes;
 pub mod state;
 pub mod types;
+pub mod ws;
 
 #[derive(RustEmbed)]
 #[folder = "../../frontend/dist"]
 struct Assets;
 
 pub fn app(store: Arc<dyn ReviewStore>) -> Router {
+    let (ws_tx, _) = tokio::sync::broadcast::channel(64);
     let state = state::AppState {
         store,
         highlighter: Arc::new(preflight_core::highlight::Highlighter::new()),
+        ws_tx,
     };
     Router::new()
         .route("/api/health", get(health))
@@ -33,6 +36,7 @@ pub fn app(store: Arc<dyn ReviewStore>) -> Router {
         .nest("/api/reviews", routes::threads::review_router())
         .nest("/api/threads", routes::threads::thread_router())
         .nest("/api/threads", routes::comments::router())
+        .route("/api/ws", get(ws::ws_handler))
         .fallback(static_handler)
         .with_state(state)
 }

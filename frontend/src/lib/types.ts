@@ -134,3 +134,20 @@ export interface AddCommentRequest {
   author_type: AuthorType;
   body: string;
 }
+
+// --- WebSocket events ---
+
+export type WsEventType =
+  | "review_created"
+  | "review_status_changed"
+  | "revision_created"
+  | "thread_created"
+  | "comment_added"
+  | "thread_status_changed";
+
+export interface WsEvent {
+  event_type: WsEventType;
+  review_id: string;
+  payload: unknown;
+  timestamp: string;
+}

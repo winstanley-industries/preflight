@@ -3,11 +3,13 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
 };
+use chrono::Utc;
 use uuid::Uuid;
 
 use crate::error::ApiError;
 use crate::state::AppState;
 use crate::types::{CreateReviewRequest, ReviewResponse, UpdateReviewStatusRequest};
+use crate::ws::{WsEvent, WsEventType};
 use preflight_core::store::CreateReviewInput;
 
 pub fn router() -> axum::Router<AppState> {
@@ -46,7 +48,7 @@ async fn create_review(
         .await?;
 
     let thread_count = state.store.get_threads(review.id, None).await?.len();
-    Ok(Json(ReviewResponse {
+    let response = ReviewResponse {
         id: review.id,
         title: review.title,
         status: review.status,
@@ -55,7 +57,14 @@ async fn create_review(
         revision_count: 1,
         created_at: review.created_at,
         updated_at: review.updated_at,
-    }))
+    };
+    let _ = state.ws_tx.send(WsEvent {
+        event_type: WsEventType::ReviewCreated,
+        review_id: response.id.to_string(),
+        payload: serde_json::to_value(&response).unwrap(),
+        timestamp: Utc::now(),
+    });
+    Ok(Json(response))
 }
 
 async fn list_reviews(
@@ -110,7 +119,16 @@ async fn update_review_status(
     Path(id): Path<Uuid>,
     Json(request): Json<UpdateReviewStatusRequest>,
 ) -> Result<StatusCode, ApiError> {
-    state.store.update_review_status(id, request.status).await?;
+    state
+        .store
+        .update_review_status(id, request.status.clone())
+        .await?;
+    let _ = state.ws_tx.send(WsEvent {
+        event_type: WsEventType::ReviewStatusChanged,
+        review_id: id.to_string(),
+        payload: serde_json::json!({ "status": request.status }),
+        timestamp: Utc::now(),
+    });
     Ok(StatusCode::NO_CONTENT)
 }
 

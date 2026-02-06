@@ -153,6 +153,15 @@ impl ReviewStore for JsonFileStore {
         Ok(thread)
     }
 
+    async fn get_thread(&self, thread_id: Uuid) -> Result<CommentThread, StoreError> {
+        let state = self.state.lock().await;
+        state
+            .threads
+            .get(&thread_id)
+            .cloned()
+            .ok_or(StoreError::ThreadNotFound(thread_id))
+    }
+
     async fn get_threads(
         &self,
         review_id: Uuid,

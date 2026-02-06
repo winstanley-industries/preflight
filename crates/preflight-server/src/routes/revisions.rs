@@ -2,11 +2,13 @@ use axum::{
     Json,
     extract::{Path, State},
 };
+use chrono::Utc;
 use uuid::Uuid;
 
 use crate::error::ApiError;
 use crate::state::AppState;
 use crate::types::{CreateRevisionRequest, RevisionResponse};
+use crate::ws::{WsEvent, WsEventType};
 use preflight_core::store::CreateRevisionInput;
 
 pub fn router() -> axum::Router<AppState> {
@@ -79,7 +81,7 @@ async fn create_revision(
         })
         .await?;
 
-    Ok(Json(RevisionResponse {
+    let response = RevisionResponse {
         id: revision.id,
         review_id: revision.review_id,
         revision_number: revision.revision_number,
@@ -87,7 +89,14 @@ async fn create_revision(
         message: revision.message,
         file_count: revision.files.len(),
         created_at: revision.created_at,
-    }))
+    };
+    let _ = state.ws_tx.send(WsEvent {
+        event_type: WsEventType::RevisionCreated,
+        review_id: review_id.to_string(),
+        payload: serde_json::to_value(&response).unwrap(),
+        timestamp: Utc::now(),
+    });
+    Ok(Json(response))
 }
 
 async fn list_revisions(

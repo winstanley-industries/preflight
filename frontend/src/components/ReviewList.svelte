@@ -1,6 +1,7 @@
 <script lang="ts">
   import { listReviews } from "../lib/api";
   import { navigate } from "../lib/router.svelte";
+  import { onEvent, onReconnect } from "../lib/ws";
   import type { ReviewResponse } from "../lib/types";
 
   let reviews = $state<ReviewResponse[]>([]);
@@ -27,7 +28,7 @@
     return `${days}d ago`;
   }
 
-  $effect(() => {
+  function loadReviews() {
     listReviews()
       .then((data) => {
         reviews = data;
@@ -38,6 +39,28 @@
       .finally(() => {
         loading = false;
       });
+  }
+
+  $effect(() => {
+    loadReviews();
+
+    const unsubs = [
+      onEvent("review_created", (event) => {
+        const newReview = event.payload as ReviewResponse;
+        reviews = [...reviews, newReview];
+      }),
+      onEvent("review_status_changed", (event) => {
+        const { status } = event.payload as { status: string };
+        reviews = reviews.map((r) =>
+          r.id === event.review_id
+            ? { ...r, status: status as ReviewResponse["status"] }
+            : r,
+        );
+      }),
+      onReconnect(() => loadReviews()),
+    ];
+
+    return () => unsubs.forEach((fn) => fn());
   });
 </script>
 
