@@ -7,15 +7,18 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-use crate::review::{Comment, CommentThread, Review, ReviewStatus, ThreadStatus};
+use crate::review::{Comment, CommentThread, Review, ReviewStatus, Revision, ThreadStatus};
 use crate::store::{
-    AddCommentInput, CreateReviewInput, CreateThreadInput, ReviewStore, ReviewSummary, StoreError,
+    AddCommentInput, CreateReviewInput, CreateRevisionInput, CreateThreadInput, ReviewStore,
+    ReviewSummary, StoreError,
 };
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 struct State {
     reviews: HashMap<Uuid, Review>,
     threads: HashMap<Uuid, CommentThread>,
+    #[serde(default)]
+    revisions: HashMap<Uuid, Revision>,
 }
 
 pub struct JsonFileStore {
@@ -60,7 +63,6 @@ impl ReviewStore for JsonFileStore {
             status: ReviewStatus::Open,
             created_at: now,
             updated_at: now,
-            files: input.files,
             repo_path: input.repo_path,
             base_ref: input.base_ref,
         };
@@ -90,12 +92,19 @@ impl ReviewStore for JsonFileStore {
                     .values()
                     .filter(|t| t.review_id == review.id)
                     .count();
+                let file_count = state
+                    .revisions
+                    .values()
+                    .filter(|r| r.review_id == review.id)
+                    .max_by_key(|r| r.revision_number)
+                    .map(|r| r.files.len())
+                    .unwrap_or(0);
                 ReviewSummary {
                     id: review.id,
                     title: review.title.clone(),
                     status: review.status.clone(),
-                    file_count: review.files.len(),
                     thread_count,
+                    file_count,
                 }
             })
             .collect()
@@ -136,6 +145,8 @@ impl ReviewStore for JsonFileStore {
             comments: vec![initial_comment],
             created_at: now,
             updated_at: now,
+            revision_number: input.revision_number,
+            content_snippet: input.content_snippet,
         };
         state.threads.insert(thread.id, thread.clone());
         self.persist(&state).await?;
@@ -193,12 +204,84 @@ impl ReviewStore for JsonFileStore {
         self.persist(&state).await?;
         Ok(comment)
     }
+
+    async fn create_revision(&self, input: CreateRevisionInput) -> Result<Revision, StoreError> {
+        let mut state = self.state.lock().await;
+        if !state.reviews.contains_key(&input.review_id) {
+            return Err(StoreError::ReviewNotFound(input.review_id));
+        }
+        let next_number = state
+            .revisions
+            .values()
+            .filter(|r| r.review_id == input.review_id)
+            .map(|r| r.revision_number)
+            .max()
+            .unwrap_or(0)
+            + 1;
+        let revision = Revision {
+            id: Uuid::new_v4(),
+            review_id: input.review_id,
+            revision_number: next_number,
+            trigger: input.trigger,
+            message: input.message,
+            files: input.files,
+            created_at: Utc::now(),
+        };
+        state.revisions.insert(revision.id, revision.clone());
+        self.persist(&state).await?;
+        Ok(revision)
+    }
+
+    async fn get_revisions(&self, review_id: Uuid) -> Result<Vec<Revision>, StoreError> {
+        let state = self.state.lock().await;
+        if !state.reviews.contains_key(&review_id) {
+            return Err(StoreError::ReviewNotFound(review_id));
+        }
+        let mut revisions: Vec<Revision> = state
+            .revisions
+            .values()
+            .filter(|r| r.review_id == review_id)
+            .cloned()
+            .collect();
+        revisions.sort_by_key(|r| r.revision_number);
+        Ok(revisions)
+    }
+
+    async fn get_revision(
+        &self,
+        review_id: Uuid,
+        revision_number: u32,
+    ) -> Result<Revision, StoreError> {
+        let state = self.state.lock().await;
+        if !state.reviews.contains_key(&review_id) {
+            return Err(StoreError::ReviewNotFound(review_id));
+        }
+        state
+            .revisions
+            .values()
+            .find(|r| r.review_id == review_id && r.revision_number == revision_number)
+            .cloned()
+            .ok_or(StoreError::RevisionNotFound(review_id))
+    }
+
+    async fn get_latest_revision(&self, review_id: Uuid) -> Result<Revision, StoreError> {
+        let state = self.state.lock().await;
+        if !state.reviews.contains_key(&review_id) {
+            return Err(StoreError::ReviewNotFound(review_id));
+        }
+        state
+            .revisions
+            .values()
+            .filter(|r| r.review_id == review_id)
+            .max_by_key(|r| r.revision_number)
+            .cloned()
+            .ok_or(StoreError::RevisionNotFound(review_id))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::diff::{FileDiff, FileStatus};
     use crate::review::{AuthorType, ThreadOrigin};
     use tempfile::TempDir;
 
@@ -209,22 +292,12 @@ mod tests {
         (store, dir)
     }
 
-    fn sample_files() -> Vec<FileDiff> {
-        vec![FileDiff {
-            old_path: Some("src/main.rs".into()),
-            new_path: Some("src/main.rs".into()),
-            status: FileStatus::Modified,
-            hunks: vec![],
-        }]
-    }
-
     async fn create_review_with_store(store: &JsonFileStore) -> Review {
         store
             .create_review(CreateReviewInput {
                 title: Some("Test".into()),
-                files: sample_files(),
-                repo_path: None,
-                base_ref: None,
+                repo_path: "/tmp/test-repo".into(),
+                base_ref: "HEAD".into(),
             })
             .await
             .unwrap()
@@ -236,15 +309,13 @@ mod tests {
         let review = store
             .create_review(CreateReviewInput {
                 title: Some("Test review".into()),
-                files: sample_files(),
-                repo_path: None,
-                base_ref: None,
+                repo_path: "/tmp/test-repo".into(),
+                base_ref: "HEAD".into(),
             })
             .await
             .unwrap();
         assert_eq!(review.title.as_deref(), Some("Test review"));
         assert_eq!(review.status, ReviewStatus::Open);
-        assert_eq!(review.files.len(), 1);
         let fetched = store.get_review(review.id).await.unwrap();
         assert_eq!(fetched.id, review.id);
     }
@@ -263,18 +334,16 @@ mod tests {
         store
             .create_review(CreateReviewInput {
                 title: Some("First".into()),
-                files: sample_files(),
-                repo_path: None,
-                base_ref: None,
+                repo_path: "/tmp/repo1".into(),
+                base_ref: "HEAD".into(),
             })
             .await
             .unwrap();
         store
             .create_review(CreateReviewInput {
                 title: Some("Second".into()),
-                files: vec![],
-                repo_path: None,
-                base_ref: None,
+                repo_path: "/tmp/repo2".into(),
+                base_ref: "HEAD".into(),
             })
             .await
             .unwrap();
@@ -288,9 +357,8 @@ mod tests {
         let review = store
             .create_review(CreateReviewInput {
                 title: None,
-                files: vec![],
-                repo_path: None,
-                base_ref: None,
+                repo_path: "/tmp/repo".into(),
+                base_ref: "HEAD".into(),
             })
             .await
             .unwrap();
@@ -311,9 +379,8 @@ mod tests {
             store
                 .create_review(CreateReviewInput {
                     title: Some("Persisted".into()),
-                    files: sample_files(),
-                    repo_path: None,
-                    base_ref: None,
+                    repo_path: "/tmp/repo".into(),
+                    base_ref: "HEAD".into(),
                 })
                 .await
                 .unwrap();
@@ -339,6 +406,8 @@ mod tests {
                 origin: ThreadOrigin::Comment,
                 initial_comment_body: "Looks wrong".into(),
                 initial_comment_author: AuthorType::Human,
+                revision_number: None,
+                content_snippet: None,
             })
             .await
             .unwrap();
@@ -362,6 +431,8 @@ mod tests {
                 origin: ThreadOrigin::Comment,
                 initial_comment_body: "hi".into(),
                 initial_comment_author: AuthorType::Human,
+                revision_number: None,
+                content_snippet: None,
             })
             .await;
         assert!(matches!(result, Err(StoreError::ReviewNotFound(_))));
@@ -387,6 +458,8 @@ mod tests {
                 origin: ThreadOrigin::Comment,
                 initial_comment_body: "a".into(),
                 initial_comment_author: AuthorType::Human,
+                revision_number: None,
+                content_snippet: None,
             })
             .await
             .unwrap();
@@ -399,6 +472,8 @@ mod tests {
                 origin: ThreadOrigin::ExplanationRequest,
                 initial_comment_body: "b".into(),
                 initial_comment_author: AuthorType::Human,
+                revision_number: None,
+                content_snippet: None,
             })
             .await
             .unwrap();
@@ -425,6 +500,8 @@ mod tests {
                 origin: ThreadOrigin::Comment,
                 initial_comment_body: "fix this".into(),
                 initial_comment_author: AuthorType::Human,
+                revision_number: None,
+                content_snippet: None,
             })
             .await
             .unwrap();
@@ -449,6 +526,8 @@ mod tests {
                 origin: ThreadOrigin::Comment,
                 initial_comment_body: "why?".into(),
                 initial_comment_author: AuthorType::Human,
+                revision_number: None,
+                content_snippet: None,
             })
             .await
             .unwrap();
@@ -485,18 +564,17 @@ mod tests {
         let review = store
             .create_review(CreateReviewInput {
                 title: Some("Repo test".into()),
-                files: sample_files(),
-                repo_path: Some("/tmp/fake-repo".into()),
-                base_ref: Some("HEAD~1".into()),
+                repo_path: "/tmp/fake-repo".into(),
+                base_ref: "HEAD~1".into(),
             })
             .await
             .unwrap();
-        assert_eq!(review.repo_path.as_deref(), Some("/tmp/fake-repo"));
-        assert_eq!(review.base_ref.as_deref(), Some("HEAD~1"));
+        assert_eq!(review.repo_path, "/tmp/fake-repo");
+        assert_eq!(review.base_ref, "HEAD~1");
 
         let fetched = store.get_review(review.id).await.unwrap();
-        assert_eq!(fetched.repo_path.as_deref(), Some("/tmp/fake-repo"));
-        assert_eq!(fetched.base_ref.as_deref(), Some("HEAD~1"));
+        assert_eq!(fetched.repo_path, "/tmp/fake-repo");
+        assert_eq!(fetched.base_ref, "HEAD~1");
     }
 
     #[tokio::test]
@@ -517,6 +595,8 @@ mod tests {
                     origin: ThreadOrigin::AgentExplanation,
                     initial_comment_body: "This does X".into(),
                     initial_comment_author: AuthorType::Agent,
+                    revision_number: None,
+                    content_snippet: None,
                 })
                 .await
                 .unwrap();
@@ -527,5 +607,134 @@ mod tests {
             assert_eq!(threads.len(), 1);
             assert_eq!(threads[0].origin, ThreadOrigin::AgentExplanation);
         }
+    }
+
+    #[tokio::test]
+    async fn test_create_and_get_revision() {
+        use crate::diff::{FileDiff, FileStatus};
+        use crate::review::RevisionTrigger;
+
+        let (store, _dir) = test_store().await;
+        let review = create_review_with_store(&store).await;
+        let file = FileDiff {
+            old_path: None,
+            new_path: Some("src/main.rs".into()),
+            status: FileStatus::Added,
+            hunks: vec![],
+        };
+        let revision = store
+            .create_revision(CreateRevisionInput {
+                review_id: review.id,
+                trigger: RevisionTrigger::Agent,
+                message: Some("Initial diff".into()),
+                files: vec![file],
+            })
+            .await
+            .unwrap();
+        assert_eq!(revision.revision_number, 1);
+        assert_eq!(revision.review_id, review.id);
+        assert_eq!(revision.files.len(), 1);
+        assert_eq!(revision.message.as_deref(), Some("Initial diff"));
+
+        let fetched = store.get_revision(review.id, 1).await.unwrap();
+        assert_eq!(fetched.id, revision.id);
+        assert_eq!(fetched.revision_number, 1);
+    }
+
+    #[tokio::test]
+    async fn test_revision_numbers_increment() {
+        use crate::review::RevisionTrigger;
+
+        let (store, _dir) = test_store().await;
+        let review = create_review_with_store(&store).await;
+        let r1 = store
+            .create_revision(CreateRevisionInput {
+                review_id: review.id,
+                trigger: RevisionTrigger::Agent,
+                message: None,
+                files: vec![],
+            })
+            .await
+            .unwrap();
+        let r2 = store
+            .create_revision(CreateRevisionInput {
+                review_id: review.id,
+                trigger: RevisionTrigger::Manual,
+                message: None,
+                files: vec![],
+            })
+            .await
+            .unwrap();
+        assert_eq!(r1.revision_number, 1);
+        assert_eq!(r2.revision_number, 2);
+    }
+
+    #[tokio::test]
+    async fn test_get_revisions_sorted() {
+        use crate::review::RevisionTrigger;
+
+        let (store, _dir) = test_store().await;
+        let review = create_review_with_store(&store).await;
+        for _ in 0..3 {
+            store
+                .create_revision(CreateRevisionInput {
+                    review_id: review.id,
+                    trigger: RevisionTrigger::Agent,
+                    message: None,
+                    files: vec![],
+                })
+                .await
+                .unwrap();
+        }
+        let revisions = store.get_revisions(review.id).await.unwrap();
+        assert_eq!(revisions.len(), 3);
+        assert_eq!(revisions[0].revision_number, 1);
+        assert_eq!(revisions[1].revision_number, 2);
+        assert_eq!(revisions[2].revision_number, 3);
+    }
+
+    #[tokio::test]
+    async fn test_get_latest_revision() {
+        use crate::review::RevisionTrigger;
+
+        let (store, _dir) = test_store().await;
+        let review = create_review_with_store(&store).await;
+        store
+            .create_revision(CreateRevisionInput {
+                review_id: review.id,
+                trigger: RevisionTrigger::Agent,
+                message: Some("first".into()),
+                files: vec![],
+            })
+            .await
+            .unwrap();
+        store
+            .create_revision(CreateRevisionInput {
+                review_id: review.id,
+                trigger: RevisionTrigger::Manual,
+                message: Some("second".into()),
+                files: vec![],
+            })
+            .await
+            .unwrap();
+        let latest = store.get_latest_revision(review.id).await.unwrap();
+        assert_eq!(latest.revision_number, 2);
+        assert_eq!(latest.message.as_deref(), Some("second"));
+    }
+
+    #[tokio::test]
+    async fn test_create_revision_review_not_found() {
+        use crate::review::RevisionTrigger;
+
+        let (store, _dir) = test_store().await;
+        let result = store
+            .create_revision(CreateRevisionInput {
+                review_id: Uuid::new_v4(),
+                trigger: RevisionTrigger::Agent,
+                message: None,
+                files: vec![],
+            })
+            .await;
+        assert!(matches!(result, Err(StoreError::ReviewNotFound(_))));
     }
 }

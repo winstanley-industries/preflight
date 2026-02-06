@@ -1,14 +1,23 @@
 <script lang="ts">
-  import { getReview, listFiles, listThreads } from "../lib/api";
+  import {
+    getReview,
+    listFiles,
+    listRevisions,
+    listThreads,
+    createRevision,
+    ApiError,
+  } from "../lib/api";
   import { navigate } from "../lib/router.svelte";
   import type {
     FileListEntry,
     ReviewResponse,
+    RevisionResponse,
     ThreadResponse,
   } from "../lib/types";
   import FileTree from "./FileTree.svelte";
   import DiffView from "./DiffView.svelte";
   import ThreadPanel from "./ThreadPanel.svelte";
+  import RevisionTimeline from "./RevisionTimeline.svelte";
 
   interface Props {
     reviewId: string;
@@ -19,8 +28,11 @@
   let review = $state<ReviewResponse | null>(null);
   let files = $state<FileListEntry[]>([]);
   let threads = $state<ThreadResponse[]>([]);
+  let revisions = $state<RevisionResponse[]>([]);
+  let selectedRevision = $state<number>(0);
   let selectedFile = $state<string | null>(null);
   let error = $state<string | null>(null);
+  let refreshMessage = $state<string | null>(null);
   let threadsPanelOpen = $state(true);
   let highlightThreadId = $state<string | null>(null);
   let navigateToLine = $state<number | null>(null);
@@ -30,19 +42,94 @@
     files.find((f) => f.path === selectedFile)?.status ?? "Modified",
   );
 
+  // Interdiff: compare two revisions via shift+click on the timeline
+  let compareFrom = $state<number | null>(null);
+  let interdiffParams = $derived(
+    compareFrom != null ? { from: compareFrom, to: selectedRevision } : null,
+  );
+
   async function load() {
     try {
-      const [r, f] = await Promise.all([
+      const [r, revs] = await Promise.all([
         getReview(reviewId),
-        listFiles(reviewId),
+        listRevisions(reviewId),
       ]);
       review = r;
+      revisions = revs;
+      const latest =
+        revs.length > 0
+          ? Math.max(...revs.map((rev) => rev.revision_number))
+          : 0;
+      selectedRevision = latest;
+      const f = await listFiles(reviewId, latest || undefined);
       files = f;
       if (f.length > 0 && !selectedFile) {
         selectedFile = f[0].path;
       }
     } catch (e: unknown) {
       error = e instanceof Error ? e.message : "Failed to load review";
+    }
+  }
+
+  async function selectRevision(revisionNumber: number) {
+    compareFrom = null;
+    try {
+      const newFiles = await listFiles(reviewId, revisionNumber);
+      const currentFileExists =
+        selectedFile && newFiles.find((f) => f.path === selectedFile);
+      if (!currentFileExists) {
+        selectedFile = newFiles.length > 0 ? newFiles[0].path : null;
+      }
+      files = newFiles;
+      selectedRevision = revisionNumber;
+    } catch (e: unknown) {
+      error = e instanceof Error ? e.message : "Failed to load files";
+    }
+  }
+
+  async function handleCompare(from: number, to: number) {
+    compareFrom = from;
+    // Load file lists from both revisions and merge to show the union
+    try {
+      const [fromFiles, toFiles] = await Promise.all([
+        listFiles(reviewId, from),
+        listFiles(reviewId, to),
+      ]);
+      const merged: FileListEntry[] = [...toFiles];
+      for (const f of fromFiles) {
+        if (!merged.some((m) => m.path === f.path)) {
+          merged.push(f);
+        }
+      }
+      const currentFileExists =
+        selectedFile && merged.find((f) => f.path === selectedFile);
+      if (!currentFileExists) {
+        selectedFile = merged.length > 0 ? merged[0].path : null;
+      }
+      files = merged;
+      selectedRevision = to;
+    } catch (e: unknown) {
+      error = e instanceof Error ? e.message : "Failed to load files";
+    }
+  }
+
+  async function handleRefresh() {
+    refreshMessage = null;
+    try {
+      await createRevision(reviewId, { trigger: "Manual" });
+      const revs = await listRevisions(reviewId);
+      revisions = revs;
+      const latest = Math.max(...revs.map((rev) => rev.revision_number));
+      await selectRevision(latest);
+    } catch (e: unknown) {
+      if (e instanceof ApiError && e.status === 400) {
+        refreshMessage = "No changes detected";
+        setTimeout(() => {
+          refreshMessage = null;
+        }, 3000);
+      } else {
+        error = e instanceof Error ? e.message : "Failed to create revision";
+      }
     }
   }
 
@@ -97,6 +184,28 @@
       </span>
     </header>
 
+    <!-- Revision timeline -->
+    {#if revisions.length > 0}
+      <div class="border-b border-border shrink-0">
+        <RevisionTimeline
+          {revisions}
+          {selectedRevision}
+          {compareFrom}
+          onSelect={selectRevision}
+          onCompare={handleCompare}
+          onClearCompare={() => (compareFrom = null)}
+          onRefresh={handleRefresh}
+        />
+      </div>
+      {#if refreshMessage}
+        <div
+          class="px-4 py-1 text-xs text-text-faint bg-bg-surface border-b border-border shrink-0"
+        >
+          {refreshMessage}
+        </div>
+      {/if}
+    {/if}
+
     <!-- Three-panel body -->
     <div class="flex flex-1 min-h-0">
       <!-- File tree -->
@@ -120,7 +229,8 @@
             filePath={selectedFile}
             {threads}
             fileStatus={selectedFileStatus}
-            hasRepoPath={review.has_repo_path}
+            revision={selectedRevision || undefined}
+            interdiff={interdiffParams}
             {navigateToLine}
             onDiffLinesKnown={(lines) => {
               diffLines = lines;

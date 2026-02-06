@@ -9,9 +9,14 @@ use uuid::Uuid;
 #[derive(Debug, Deserialize)]
 pub struct CreateReviewRequest {
     pub title: Option<String>,
-    pub diff: String,
-    pub repo_path: Option<String>,
-    pub base_ref: Option<String>,
+    pub repo_path: String,
+    pub base_ref: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateRevisionRequest {
+    pub trigger: preflight_core::review::RevisionTrigger,
+    pub message: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -40,6 +45,19 @@ pub struct AddCommentRequest {
     pub body: String,
 }
 
+// --- Query parameters ---
+
+#[derive(Debug, Deserialize)]
+pub struct RevisionQuery {
+    pub revision: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct InterdiffQuery {
+    pub from: u32,
+    pub to: u32,
+}
+
 // --- Responses ---
 
 #[derive(Debug, Serialize)]
@@ -49,9 +67,20 @@ pub struct ReviewResponse {
     pub status: ReviewStatus,
     pub file_count: usize,
     pub thread_count: usize,
-    pub has_repo_path: bool,
+    pub revision_count: usize,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RevisionResponse {
+    pub id: Uuid,
+    pub review_id: Uuid,
+    pub revision_number: u32,
+    pub trigger: preflight_core::review::RevisionTrigger,
+    pub message: Option<String>,
+    pub file_count: usize,
+    pub created_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Serialize)]

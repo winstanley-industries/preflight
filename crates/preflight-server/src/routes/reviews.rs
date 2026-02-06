@@ -22,24 +22,37 @@ async fn create_review(
     State(state): State<AppState>,
     Json(request): Json<CreateReviewRequest>,
 ) -> Result<Json<ReviewResponse>, ApiError> {
-    let files = preflight_core::parser::parse_diff(&request.diff).unwrap_or_default();
-    let has_repo_path = request.repo_path.is_some();
+    let repo_path = std::path::Path::new(&request.repo_path);
+    let files = preflight_core::git_diff::diff_against_base(repo_path, &request.base_ref)
+        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+
     let review = state
         .store
         .create_review(CreateReviewInput {
             title: request.title,
-            files,
             repo_path: request.repo_path,
             base_ref: request.base_ref,
         })
         .await?;
+
+    let revision = state
+        .store
+        .create_revision(preflight_core::store::CreateRevisionInput {
+            review_id: review.id,
+            trigger: preflight_core::review::RevisionTrigger::Manual,
+            message: None,
+            files,
+        })
+        .await?;
+
+    let thread_count = state.store.get_threads(review.id, None).await?.len();
     Ok(Json(ReviewResponse {
         id: review.id,
         title: review.title,
         status: review.status,
-        file_count: review.files.len(),
-        thread_count: 0,
-        has_repo_path,
+        file_count: revision.files.len(),
+        thread_count,
+        revision_count: 1,
         created_at: review.created_at,
         updated_at: review.updated_at,
     }))
@@ -52,13 +65,19 @@ async fn list_reviews(
     let mut responses = Vec::with_capacity(summaries.len());
     for summary in summaries {
         let review = state.store.get_review(summary.id).await?;
+        let revision_count = state
+            .store
+            .get_revisions(summary.id)
+            .await
+            .map(|r| r.len())
+            .unwrap_or(0);
         responses.push(ReviewResponse {
             id: review.id,
             title: review.title,
             status: review.status,
-            file_count: review.files.len(),
+            file_count: summary.file_count,
             thread_count: summary.thread_count,
-            has_repo_path: review.repo_path.is_some(),
+            revision_count,
             created_at: review.created_at,
             updated_at: review.updated_at,
         });
@@ -72,13 +91,15 @@ async fn get_review(
 ) -> Result<Json<ReviewResponse>, ApiError> {
     let review = state.store.get_review(id).await?;
     let thread_count = state.store.get_threads(id, None).await?.len();
+    let revisions = state.store.get_revisions(id).await?;
+    let file_count = revisions.last().map(|r| r.files.len()).unwrap_or(0);
     Ok(Json(ReviewResponse {
         id: review.id,
         title: review.title,
         status: review.status,
-        file_count: review.files.len(),
+        file_count,
         thread_count,
-        has_repo_path: review.repo_path.is_some(),
+        revision_count: revisions.len(),
         created_at: review.created_at,
         updated_at: review.updated_at,
     }))
@@ -116,11 +137,83 @@ mod tests {
         serde_json::from_slice(&bytes).unwrap()
     }
 
-    #[tokio::test]
-    async fn test_create_review_with_valid_diff() {
-        let app = test_app().await;
+    /// Helper: create a temp git repo with a modification, return (TempDir, repo_path_string).
+    fn setup_test_repo() -> (tempfile::TempDir, String) {
+        use std::process::Command;
 
-        let diff = "diff --git a/src/main.rs b/src/main.rs\nindex abc..def 100644\n--- a/src/main.rs\n+++ b/src/main.rs\n@@ -1,3 +1,4 @@\n use std::io;\n+use std::fs;\n \n fn main() {\n";
+        let dir = tempfile::TempDir::new().unwrap();
+        let p = dir.path();
+
+        Command::new("git")
+            .args(["init"])
+            .current_dir(p)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.email", "t@t.com"])
+            .current_dir(p)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.name", "T"])
+            .current_dir(p)
+            .output()
+            .unwrap();
+
+        std::fs::create_dir_all(p.join("src")).unwrap();
+        std::fs::write(p.join("src/main.rs"), "fn main() {}\n").unwrap();
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(p)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "init"])
+            .current_dir(p)
+            .output()
+            .unwrap();
+
+        // Modify the file so there is a diff against HEAD
+        std::fs::write(
+            p.join("src/main.rs"),
+            "use std::io;\n\nfn main() {\n    println!(\"hello\");\n}\n",
+        )
+        .unwrap();
+
+        let repo_path = p.to_str().unwrap().to_string();
+        (dir, repo_path)
+    }
+
+    /// Helper: create a review via POST and return its ID.
+    async fn create_review_for_test(app: &axum::Router, repo_path: &str) -> String {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/reviews")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "title": "Test review",
+                            "repo_path": repo_path,
+                            "base_ref": "HEAD"
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let json = body_json(response).await;
+        json["id"].as_str().unwrap().to_string()
+    }
+
+    #[tokio::test]
+    async fn test_create_review_with_git_repo() {
+        let app = test_app().await;
+        let (_repo_dir, repo_path) = setup_test_repo();
 
         let response = app
             .oneshot(
@@ -131,7 +224,8 @@ mod tests {
                     .body(Body::from(
                         serde_json::json!({
                             "title": "Test review",
-                            "diff": diff
+                            "repo_path": repo_path,
+                            "base_ref": "HEAD"
                         })
                         .to_string(),
                     ))
@@ -147,9 +241,36 @@ mod tests {
         assert_eq!(json["status"], "Open");
         assert_eq!(json["file_count"], 1);
         assert_eq!(json["thread_count"], 0);
+        assert_eq!(json["revision_count"], 1);
         assert!(json["id"].is_string());
         assert!(json["created_at"].is_string());
         assert!(json["updated_at"].is_string());
+    }
+
+    #[tokio::test]
+    async fn test_create_review_bad_repo_path() {
+        let app = test_app().await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/reviews")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "title": "Bad repo",
+                            "repo_path": "/tmp/nonexistent_repo_path_xyz",
+                            "base_ref": "HEAD"
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]
@@ -175,32 +296,9 @@ mod tests {
     #[tokio::test]
     async fn test_get_review_existing() {
         let app = test_app().await;
+        let (_repo_dir, repo_path) = setup_test_repo();
+        let id = create_review_for_test(&app, &repo_path).await;
 
-        // First, create a review
-        let create_response = app
-            .clone()
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/api/reviews")
-                    .header("content-type", "application/json")
-                    .body(Body::from(
-                        serde_json::json!({
-                            "title": "Get test",
-                            "diff": ""
-                        })
-                        .to_string(),
-                    ))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(create_response.status(), StatusCode::OK);
-        let created = body_json(create_response).await;
-        let id = created["id"].as_str().unwrap();
-
-        // Now fetch it
         let get_response = app
             .oneshot(
                 Request::builder()
@@ -214,7 +312,8 @@ mod tests {
         assert_eq!(get_response.status(), StatusCode::OK);
         let json = body_json(get_response).await;
         assert_eq!(json["id"], id);
-        assert_eq!(json["title"], "Get test");
+        assert_eq!(json["title"], "Test review");
+        assert_eq!(json["revision_count"], 1);
     }
 
     #[tokio::test]
@@ -236,89 +335,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_create_review_with_repo_path() {
-        let app = test_app().await;
-
-        let response = app
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/api/reviews")
-                    .header("content-type", "application/json")
-                    .body(Body::from(
-                        serde_json::json!({
-                            "title": "Repo test",
-                            "diff": "",
-                            "repo_path": "/tmp/fake",
-                            "base_ref": "abc123"
-                        })
-                        .to_string(),
-                    ))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-        let json = body_json(response).await;
-        assert_eq!(json["has_repo_path"], true);
-    }
-
-    #[tokio::test]
-    async fn test_create_review_without_repo_path() {
-        let app = test_app().await;
-
-        let response = app
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/api/reviews")
-                    .header("content-type", "application/json")
-                    .body(Body::from(
-                        serde_json::json!({
-                            "title": "No repo",
-                            "diff": ""
-                        })
-                        .to_string(),
-                    ))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-        let json = body_json(response).await;
-        assert_eq!(json["has_repo_path"], false);
-    }
-
-    #[tokio::test]
     async fn test_update_review_status() {
         let app = test_app().await;
+        let (_repo_dir, repo_path) = setup_test_repo();
+        let id = create_review_for_test(&app, &repo_path).await;
 
-        // Create a review
-        let create_response = app
-            .clone()
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/api/reviews")
-                    .header("content-type", "application/json")
-                    .body(Body::from(
-                        serde_json::json!({
-                            "title": "Status test",
-                            "diff": ""
-                        })
-                        .to_string(),
-                    ))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        let created = body_json(create_response).await;
-        let id = created["id"].as_str().unwrap();
-
-        // Update its status
         let patch_response = app
             .oneshot(
                 Request::builder()

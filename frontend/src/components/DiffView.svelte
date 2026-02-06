@@ -1,6 +1,6 @@
 <script lang="ts">
   import { tick } from "svelte";
-  import { getFileDiff, getFileContent } from "../lib/api";
+  import { getFileDiff, getFileInterdiff, getFileContent } from "../lib/api";
   import type {
     FileDiffResponse,
     FileContentResponse,
@@ -14,7 +14,8 @@
     filePath: string;
     threads: ThreadResponse[];
     fileStatus: FileStatus;
-    hasRepoPath: boolean;
+    revision?: number;
+    interdiff?: { from: number; to: number } | null;
     navigateToLine?: number | null;
     onThreadCreated?: (threadId: string) => void;
     onDiffLinesKnown?: (lines: Set<number>) => void;
@@ -25,7 +26,8 @@
     filePath,
     threads,
     fileStatus,
-    hasRepoPath,
+    revision,
+    interdiff = null,
     navigateToLine = null,
     onThreadCreated,
     onDiffLinesKnown,
@@ -127,7 +129,12 @@
     }
   }
 
-  async function loadDiff(rid: string, path: string) {
+  async function loadDiff(
+    rid: string,
+    path: string,
+    rev?: number,
+    inter?: { from: number; to: number } | null,
+  ) {
     loading = true;
     error = null;
     closeForm();
@@ -135,7 +142,11 @@
     fileContent = null;
     fileVersion = "new";
     try {
-      diff = await getFileDiff(rid, path);
+      if (inter) {
+        diff = await getFileInterdiff(rid, path, inter.from, inter.to);
+      } else {
+        diff = await getFileDiff(rid, path, rev);
+      }
     } catch (e: unknown) {
       error = e instanceof Error ? e.message : "Failed to load diff";
       diff = null;
@@ -145,7 +156,7 @@
   }
 
   $effect(() => {
-    loadDiff(reviewId, filePath);
+    loadDiff(reviewId, filePath, revision, interdiff);
   });
 
   // Set of all new-side line numbers present in the diff
@@ -177,7 +188,7 @@
         const el = document.getElementById(`L${target}`);
         el?.scrollIntoView({ behavior: "smooth", block: "center" });
       });
-    } else if (hasRepoPath) {
+    } else {
       // Line is outside the diff — switch to file view
       viewMode = "file";
       if (!fileContent || fileVersion !== "new") {
@@ -220,13 +231,9 @@
       }}>Diff</button
     >
     <button
-      class="text-xs px-2 py-0.5 rounded {viewMode === 'file'
+      class="text-xs px-2 py-0.5 rounded cursor-pointer {viewMode === 'file'
         ? 'bg-bg-active text-text'
-        : hasRepoPath
-          ? 'text-text-muted hover:text-text cursor-pointer'
-          : 'text-text-faint cursor-not-allowed'}"
-      disabled={!hasRepoPath}
-      title={!hasRepoPath ? "Full file view requires a repo path" : undefined}
+        : 'text-text-muted hover:text-text'}"
       onclick={() => {
         viewMode = "file";
         if (!fileContent || fileVersion !== "new") {

@@ -33,6 +33,31 @@ pub enum AuthorType {
     Agent,
 }
 
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RevisionTrigger {
+    Agent,
+    Manual,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContentSnippet {
+    pub lines: Vec<String>,
+    pub context_before: Vec<String>,
+    pub context_after: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Revision {
+    pub id: Uuid,
+    pub review_id: Uuid,
+    pub revision_number: u32,
+    pub trigger: RevisionTrigger,
+    pub message: Option<String>,
+    pub files: Vec<FileDiff>,
+    pub created_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Review {
     pub id: Uuid,
@@ -40,11 +65,8 @@ pub struct Review {
     pub status: ReviewStatus,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
-    pub files: Vec<FileDiff>,
-    #[serde(default)]
-    pub repo_path: Option<String>,
-    #[serde(default)]
-    pub base_ref: Option<String>,
+    pub repo_path: String,
+    pub base_ref: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,4 +89,8 @@ pub struct CommentThread {
     pub comments: Vec<Comment>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    #[serde(default)]
+    pub revision_number: Option<u32>,
+    #[serde(default)]
+    pub content_snippet: Option<ContentSnippet>,
 }
