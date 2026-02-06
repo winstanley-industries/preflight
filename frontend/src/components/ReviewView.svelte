@@ -95,14 +95,9 @@
         listFiles(reviewId, from),
         listFiles(reviewId, to),
       ]);
-      const seen = new Set<string>();
-      const merged: FileListEntry[] = [];
-      for (const f of toFiles) {
-        seen.add(f.path);
-        merged.push(f);
-      }
+      const merged: FileListEntry[] = [...toFiles];
       for (const f of fromFiles) {
-        if (!seen.has(f.path)) {
+        if (!merged.some((m) => m.path === f.path)) {
           merged.push(f);
         }
       }
