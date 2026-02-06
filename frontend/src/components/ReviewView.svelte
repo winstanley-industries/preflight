@@ -42,12 +42,10 @@
     files.find((f) => f.path === selectedFile)?.status ?? "Modified",
   );
 
-  // Interdiff mode: when enabled, show only changes since previous revision
-  let showInterdiff = $state(false);
+  // Interdiff: compare two revisions via shift+click on the timeline
+  let compareFrom = $state<number | null>(null);
   let interdiffParams = $derived(
-    showInterdiff && selectedRevision > 1
-      ? { from: selectedRevision - 1, to: selectedRevision }
-      : null,
+    compareFrom != null ? { from: compareFrom, to: selectedRevision } : null,
   );
 
   async function load() {
@@ -74,10 +72,11 @@
   }
 
   async function selectRevision(revisionNumber: number) {
+    compareFrom = null;
     try {
       const newFiles = await listFiles(reviewId, revisionNumber);
-      // Check if current file exists in new revision before updating state
-      const currentFileExists = selectedFile && newFiles.find((f) => f.path === selectedFile);
+      const currentFileExists =
+        selectedFile && newFiles.find((f) => f.path === selectedFile);
       if (!currentFileExists) {
         selectedFile = newFiles.length > 0 ? newFiles[0].path : null;
       }
@@ -86,6 +85,11 @@
     } catch (e: unknown) {
       error = e instanceof Error ? e.message : "Failed to load files";
     }
+  }
+
+  function handleCompare(from: number, to: number) {
+    compareFrom = from;
+    selectedRevision = to;
   }
 
   async function handleRefresh() {
@@ -161,26 +165,16 @@
 
     <!-- Revision timeline -->
     {#if revisions.length > 0}
-      <div class="flex items-center border-b border-border shrink-0">
-        <div class="flex-1">
-          <RevisionTimeline
-            {revisions}
-            {selectedRevision}
-            onSelect={selectRevision}
-            onRefresh={handleRefresh}
-          />
-        </div>
-        {#if selectedRevision > 1}
-          <button
-            class="px-3 py-1 mr-2 text-xs rounded {showInterdiff
-              ? 'bg-accent text-white'
-              : 'bg-bg-hover text-text-muted hover:text-text'} transition-colors"
-            onclick={() => (showInterdiff = !showInterdiff)}
-            title="Show only changes since revision {selectedRevision - 1}"
-          >
-            Δ {selectedRevision - 1}→{selectedRevision}
-          </button>
-        {/if}
+      <div class="border-b border-border shrink-0">
+        <RevisionTimeline
+          {revisions}
+          {selectedRevision}
+          {compareFrom}
+          onSelect={selectRevision}
+          onCompare={handleCompare}
+          onClearCompare={() => (compareFrom = null)}
+          onRefresh={handleRefresh}
+        />
       </div>
       {#if refreshMessage}
         <div

@@ -4,13 +4,43 @@
   interface Props {
     revisions: RevisionResponse[];
     selectedRevision: number;
+    compareFrom: number | null;
     onSelect: (revisionNumber: number) => void;
+    onCompare: (from: number, to: number) => void;
+    onClearCompare: () => void;
     onRefresh: () => void;
   }
 
-  let { revisions, selectedRevision, onSelect, onRefresh }: Props = $props();
+  let {
+    revisions,
+    selectedRevision,
+    compareFrom,
+    onSelect,
+    onCompare,
+    onClearCompare,
+    onRefresh,
+  }: Props = $props();
 
   let refreshing = $state(false);
+
+  let compareTo = $derived(compareFrom != null ? selectedRevision : null);
+  let rangeMin = $derived(
+    compareFrom != null ? Math.min(compareFrom, selectedRevision) : null,
+  );
+  let rangeMax = $derived(
+    compareFrom != null ? Math.max(compareFrom, selectedRevision) : null,
+  );
+
+  function isInRange(revNum: number): boolean {
+    if (rangeMin == null || rangeMax == null) return false;
+    return revNum >= rangeMin && revNum <= rangeMax;
+  }
+
+  function isEndpoint(revNum: number): boolean {
+    return (
+      revNum === compareFrom || (compareTo != null && revNum === compareTo)
+    );
+  }
 
   function relativeTime(dateStr: string): string {
     const now = Date.now();
@@ -25,12 +55,21 @@
     return `${diffDay}d ago`;
   }
 
+  function handleClick(revNum: number, event: MouseEvent) {
+    if (event.shiftKey && selectedRevision !== revNum) {
+      const from = Math.min(selectedRevision, revNum);
+      const to = Math.max(selectedRevision, revNum);
+      onCompare(from, to);
+    } else {
+      onSelect(revNum);
+    }
+  }
+
   async function handleRefresh() {
     refreshing = true;
     try {
       onRefresh();
     } finally {
-      // The parent controls the actual async flow; just show brief feedback
       setTimeout(() => {
         refreshing = false;
       }, 600);
@@ -46,13 +85,17 @@
   {#each revisions as rev (rev.id)}
     <button
       class="flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors cursor-pointer shrink-0
-        {rev.revision_number === selectedRevision
-        ? 'bg-bg-active text-text'
-        : 'text-text-muted hover:bg-bg-hover hover:text-text'}"
-      onclick={() => onSelect(rev.revision_number)}
-      title="{rev.trigger} \u2022 {relativeTime(rev.created_at)}{rev.message
-        ? ` \u2022 ${rev.message}`
-        : ''}"
+        {isEndpoint(rev.revision_number)
+        ? 'bg-accent/20 text-accent ring-1 ring-accent/40'
+        : isInRange(rev.revision_number)
+          ? 'bg-accent/10 text-text'
+          : rev.revision_number === selectedRevision && compareFrom == null
+            ? 'bg-bg-active text-text'
+            : 'text-text-muted hover:bg-bg-hover hover:text-text'}"
+      onclick={(e) => handleClick(rev.revision_number, e)}
+      title="{rev.trigger} • {relativeTime(rev.created_at)}{rev.message
+        ? ` • ${rev.message}`
+        : ''}{compareFrom == null ? '\nShift+click to compare' : ''}"
     >
       <!-- Trigger icon -->
       <span class="text-text-faint">
@@ -83,9 +126,11 @@
       <!-- Revision number in a small circle -->
       <span
         class="inline-flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-medium leading-none
-          {rev.revision_number === selectedRevision
+          {isEndpoint(rev.revision_number)
           ? 'bg-accent text-bg'
-          : 'bg-bg-hover text-text-muted'}"
+          : rev.revision_number === selectedRevision && compareFrom == null
+            ? 'bg-accent text-bg'
+            : 'bg-bg-hover text-text-muted'}"
       >
         {rev.revision_number}
       </span>
@@ -96,6 +141,20 @@
       </span>
     </button>
   {/each}
+
+  <!-- Compare indicator and clear button -->
+  {#if compareFrom != null && compareTo != null}
+    <span class="text-xs text-accent ml-2 shrink-0">
+      Δ {rangeMin}→{rangeMax}
+    </span>
+    <button
+      class="text-text-muted hover:text-text text-xs px-1 cursor-pointer shrink-0"
+      onclick={onClearCompare}
+      title="Clear comparison"
+    >
+      ×
+    </button>
+  {/if}
 
   <!-- Refresh button -->
   <button
