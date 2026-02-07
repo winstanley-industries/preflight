@@ -96,6 +96,14 @@ pub struct UpdateReviewStatusInput {
     pub status: String,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ResolveThreadInput {
+    #[schemars(description = "UUID of the comment thread")]
+    pub thread_id: String,
+    #[schemars(description = "New status: 'Open' or 'Resolved'")]
+    pub status: String,
+}
+
 fn format_error(e: ClientError) -> String {
     e.to_string()
 }
@@ -298,6 +306,27 @@ impl PreflightMcp {
         Ok(format!(
             "Review {} status updated to {}",
             input.review_id, input.status
+        ))
+    }
+
+    #[tool(description = "Resolve or reopen a comment thread")]
+    async fn resolve_thread(
+        &self,
+        Parameters(input): Parameters<ResolveThreadInput>,
+    ) -> Result<String, String> {
+        let body = serde_json::json!({ "status": input.status });
+
+        self.client
+            .patch(
+                &format!("/api/threads/{}/status", input.thread_id),
+                &body,
+            )
+            .await
+            .map_err(format_error)?;
+
+        Ok(format!(
+            "Thread {} status updated to {}",
+            input.thread_id, input.status
         ))
     }
 }
