@@ -40,6 +40,13 @@ impl JsonFileStore {
         })
     }
 
+    pub async fn new_empty(path: impl Into<PathBuf>) -> Self {
+        Self {
+            path: path.into(),
+            state: Mutex::new(State::default()),
+        }
+    }
+
     async fn persist(&self, state: &State) -> Result<(), StoreError> {
         if let Some(parent) = self.path.parent() {
             tokio::fs::create_dir_all(parent).await?;
@@ -745,5 +752,27 @@ mod tests {
             })
             .await;
         assert!(matches!(result, Err(StoreError::ReviewNotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn test_corrupted_state_file_returns_error() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("state.json");
+        tokio::fs::write(&path, r#"{"reviews": {"not-a-uuid": "garbage"}}"#)
+            .await
+            .unwrap();
+        let result = JsonFileStore::new(&path).await;
+        assert!(matches!(result, Err(StoreError::PersistenceError(_))));
+    }
+
+    #[tokio::test]
+    async fn test_new_empty_ignores_existing_state() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("state.json");
+        tokio::fs::write(&path, r#"{"reviews": {"not-a-uuid": "garbage"}}"#)
+            .await
+            .unwrap();
+        let store = JsonFileStore::new_empty(&path).await;
+        assert!(store.list_reviews().await.is_empty());
     }
 }
