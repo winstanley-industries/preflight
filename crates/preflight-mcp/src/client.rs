@@ -94,11 +94,7 @@ impl PreflightClient {
             .map_err(|e| ClientError::DeserializeError(e.to_string()))
     }
 
-    pub async fn patch(
-        &self,
-        path: &str,
-        body: &serde_json::Value,
-    ) -> Result<(), ClientError> {
+    pub async fn patch(&self, path: &str, body: &serde_json::Value) -> Result<(), ClientError> {
         let url = format!("{}{path}", self.base_url);
         let response = self
             .http
