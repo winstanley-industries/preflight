@@ -1,4 +1,4 @@
-use preflight_core::ws::WsEvent;
+use preflight_core::ws::{WsEvent, WsEventType};
 use rmcp::{
     ServerHandler,
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
@@ -104,8 +104,34 @@ pub struct ResolveThreadInput {
     pub status: String,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct WaitForEventInput {
+    #[schemars(
+        description = "Optional review UUID to filter events. If omitted, matches events from any review."
+    )]
+    pub review_id: Option<String>,
+    #[schemars(
+        description = "Optional list of event types to filter. Valid values: review_created, review_status_changed, revision_created, thread_created, comment_added, thread_status_changed. If omitted, matches any event type."
+    )]
+    pub event_types: Option<Vec<String>>,
+    #[schemars(description = "Timeout in seconds. Defaults to 300 (5 minutes). Max 600.")]
+    pub timeout_secs: Option<u64>,
+}
+
 fn format_error(e: ClientError) -> String {
     e.to_string()
+}
+
+fn event_type_matches(event_type: &WsEventType, filter: &str) -> bool {
+    match filter {
+        "review_created" => matches!(event_type, WsEventType::ReviewCreated),
+        "review_status_changed" => matches!(event_type, WsEventType::ReviewStatusChanged),
+        "revision_created" => matches!(event_type, WsEventType::RevisionCreated),
+        "thread_created" => matches!(event_type, WsEventType::ThreadCreated),
+        "comment_added" => matches!(event_type, WsEventType::CommentAdded),
+        "thread_status_changed" => matches!(event_type, WsEventType::ThreadStatusChanged),
+        _ => false,
+    }
 }
 
 impl PreflightMcp {
@@ -328,6 +354,70 @@ impl PreflightMcp {
             "Thread {} status updated to {}",
             input.thread_id, input.status
         ))
+    }
+
+    #[tool(
+        description = "Wait for a real-time event (new comment, thread created, etc). Blocks until a matching event arrives or timeout. Use this from a background task to monitor a review for activity."
+    )]
+    async fn wait_for_event(
+        &self,
+        Parameters(input): Parameters<WaitForEventInput>,
+    ) -> Result<String, String> {
+        let timeout_secs = input.timeout_secs.unwrap_or(300).min(600);
+        let timeout = std::time::Duration::from_secs(timeout_secs);
+        let mut rx = self.ws_tx.subscribe();
+
+        let result = tokio::time::timeout(timeout, async {
+            loop {
+                match rx.recv().await {
+                    Ok(event) => {
+                        // Filter by review_id if specified
+                        if let Some(ref rid) = input.review_id
+                            && &event.review_id != rid
+                        {
+                            continue;
+                        }
+                        // Filter by event type if specified
+                        if let Some(ref types) = input.event_types
+                            && !types
+                                .iter()
+                                .any(|t| event_type_matches(&event.event_type, t))
+                        {
+                            continue;
+                        }
+                        return Ok(event);
+                    }
+                    Err(broadcast::error::RecvError::Lagged(n)) => {
+                        eprintln!("[mcp] wait_for_event: skipped {n} events (lagged)");
+                        continue;
+                    }
+                    Err(broadcast::error::RecvError::Closed) => {
+                        return Err("Event channel closed".to_string());
+                    }
+                }
+            }
+        })
+        .await;
+
+        match result {
+            Ok(Ok(event)) => {
+                let output = serde_json::json!({
+                    "event_type": event.event_type,
+                    "review_id": event.review_id,
+                    "payload": event.payload,
+                    "timestamp": event.timestamp,
+                });
+                serde_json::to_string_pretty(&output).map_err(|e| e.to_string())
+            }
+            Ok(Err(e)) => Err(e),
+            Err(_) => {
+                let output = serde_json::json!({
+                    "timeout": true,
+                    "message": format!("No matching events within {timeout_secs}s"),
+                });
+                serde_json::to_string_pretty(&output).map_err(|e| e.to_string())
+            }
+        }
     }
 }
 
