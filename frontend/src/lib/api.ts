@@ -165,7 +165,9 @@ export function addComment(
 
 // --- Health ---
 
-export async function healthCheck(): Promise<string> {
-  const res = await fetch("/api/health");
-  return res.text();
+export async function healthCheck(): Promise<{
+  status: string;
+  version: string;
+}> {
+  return request("/api/health");
 }

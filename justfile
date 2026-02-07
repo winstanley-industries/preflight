@@ -91,3 +91,7 @@ worktree-clean:
 # Run a test scenario against a running server (default: http://127.0.0.1:3000)
 run-scenario:
     node scripts/scenario.ts
+
+# Bump version across workspace (requires cargo-edit): just release-bump patch|minor|major
+release-bump level:
+    cargo set-version --workspace --bump {{level}}

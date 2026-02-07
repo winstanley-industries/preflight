@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onStatus } from "../lib/ws";
 
+  let { version = "" }: { version?: string } = $props();
+
   let status = $state<"connected" | "reconnecting" | "disconnected">(
     "disconnected",
   );
@@ -15,6 +17,17 @@
 <div
   class="fixed bottom-3 right-3 flex items-center gap-1.5 text-xs text-text-muted"
 >
+  {#if version}
+    <a
+      href="https://github.com/winstanley-industries/preflight/releases"
+      target="_blank"
+      rel="noopener noreferrer"
+      class="opacity-50 hover:opacity-100 transition-opacity"
+    >
+      v{version}
+    </a>
+    <span class="opacity-30">·</span>
+  {/if}
   <span
     class="w-2 h-2 rounded-full {status === 'connected'
       ? 'bg-green-500'
