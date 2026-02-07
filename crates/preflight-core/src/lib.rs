@@ -7,3 +7,4 @@ pub mod json_store;
 pub mod parser;
 pub mod review;
 pub mod store;
+pub mod ws;

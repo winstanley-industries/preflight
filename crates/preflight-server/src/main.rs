@@ -54,7 +54,8 @@ async fn run_serve(port: u16) {
 
 async fn run_mcp(port: u16) {
     let client = PreflightClient::new(port);
-    let server = PreflightMcp::new(client);
+    let ws_tx = client.connect_ws().await;
+    let server = PreflightMcp::new(client, ws_tx);
     let service = server.serve(stdio()).await.unwrap();
     service.waiting().await.unwrap();
 }

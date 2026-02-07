@@ -1,3 +1,4 @@
+use preflight_core::ws::WsEvent;
 use rmcp::{
     ServerHandler,
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
@@ -5,6 +6,7 @@ use rmcp::{
     schemars, tool, tool_handler, tool_router,
 };
 use serde::Deserialize;
+use tokio::sync::broadcast;
 
 use crate::client::{ClientError, PreflightClient};
 
@@ -12,6 +14,7 @@ use crate::client::{ClientError, PreflightClient};
 pub struct PreflightMcp {
     client: PreflightClient,
     tool_router: ToolRouter<Self>,
+    pub ws_tx: broadcast::Sender<WsEvent>,
 }
 
 // --- Tool input schemas ---
@@ -62,10 +65,11 @@ fn format_error(e: ClientError) -> String {
 }
 
 impl PreflightMcp {
-    pub fn new(client: PreflightClient) -> Self {
+    pub fn new(client: PreflightClient, ws_tx: broadcast::Sender<WsEvent>) -> Self {
         Self {
             client,
             tool_router: Self::tool_router(),
+            ws_tx,
         }
     }
 }
