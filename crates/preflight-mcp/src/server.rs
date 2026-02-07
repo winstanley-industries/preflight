@@ -60,6 +60,16 @@ pub struct SubmitRevisionInput {
     pub message: Option<String>,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct CreateReviewInput {
+    #[schemars(description = "Absolute path to the git repository")]
+    pub repo_path: String,
+    #[schemars(description = "Optional title for the review")]
+    pub title: Option<String>,
+    #[schemars(description = "Git ref to diff against (e.g. HEAD, main). Defaults to HEAD.")]
+    pub base_ref: Option<String>,
+}
+
 fn format_error(e: ClientError) -> String {
     e.to_string()
 }
@@ -193,6 +203,26 @@ impl PreflightMcp {
             .map_err(format_error)?;
 
         serde_json::to_string_pretty(&revision).map_err(|e| e.to_string())
+    }
+
+    #[tool(description = "Create a new code review from a git repository's uncommitted changes")]
+    async fn create_review(
+        &self,
+        Parameters(input): Parameters<CreateReviewInput>,
+    ) -> Result<String, String> {
+        let body = serde_json::json!({
+            "repo_path": input.repo_path,
+            "title": input.title,
+            "base_ref": input.base_ref.unwrap_or_else(|| "HEAD".to_string()),
+        });
+
+        let review: serde_json::Value = self
+            .client
+            .post("/api/reviews", &body)
+            .await
+            .map_err(format_error)?;
+
+        serde_json::to_string_pretty(&review).map_err(|e| e.to_string())
     }
 }
 
