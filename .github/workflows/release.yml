@@ -1,0 +1,147 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  check-version:
+    name: Check for version bump
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      should_release: ${{ steps.check.outputs.should_release }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust 1.93.0
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.93.0"
+
+      - name: Get version from Cargo.toml
+        id: version
+        run: |
+          VERSION=$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[] | select(.name=="preflight-server") | .version')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Check if tag exists
+        id: check
+        run: |
+          if git rev-parse "v${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs: check-version
+    if: needs.check-version.outputs.should_release == 'true'
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+            use_cross: true
+            archive: tar.gz
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-latest
+            use_cross: true
+            archive: tar.gz
+          - target: x86_64-apple-darwin
+            runner: macos-13
+            use_cross: false
+            archive: tar.gz
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+            use_cross: false
+            archive: tar.gz
+          - target: x86_64-pc-windows-msvc
+            runner: windows-latest
+            use_cross: false
+            archive: zip
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust 1.93.0
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.93.0"
+          targets: ${{ matrix.target }}
+
+      - name: Setup Node 24.x
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm ci && npm run build
+
+      - name: Install cross
+        if: matrix.use_cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Build with cross
+        if: matrix.use_cross
+        run: cross build --release --target ${{ matrix.target }} -p preflight-server
+
+      - name: Build native
+        if: ${{ !matrix.use_cross }}
+        run: cargo build --release --target ${{ matrix.target }} -p preflight-server
+
+      - name: Package (unix)
+        if: matrix.archive == 'tar.gz'
+        run: |
+          ARCHIVE="preflight-v${{ needs.check-version.outputs.version }}-${{ matrix.target }}.tar.gz"
+          cp target/${{ matrix.target }}/release/preflight-server preflight
+          tar czf "$ARCHIVE" preflight
+          echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
+
+      - name: Package (windows)
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          $archive = "preflight-v${{ needs.check-version.outputs.version }}-${{ matrix.target }}.zip"
+          Copy-Item "target/${{ matrix.target }}/release/preflight-server.exe" "preflight.exe"
+          Compress-Archive -Path "preflight.exe" -DestinationPath $archive
+          echo "ARCHIVE=$archive" >> $env:GITHUB_ENV
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: preflight-${{ matrix.target }}
+          path: ${{ env.ARCHIVE }}
+
+  release:
+    name: Create GitHub Release
+    needs: [check-version, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.check-version.outputs.version }}
+          name: Preflight v${{ needs.check-version.outputs.version }}
+          generate_release_notes: true
+          files: artifacts/*
