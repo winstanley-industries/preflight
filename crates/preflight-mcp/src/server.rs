@@ -70,6 +70,24 @@ pub struct CreateReviewInput {
     pub base_ref: Option<String>,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct CreateThreadInput {
+    #[schemars(description = "UUID of the review")]
+    pub review_id: String,
+    #[schemars(description = "Path of the file to comment on (e.g. src/main.rs)")]
+    pub file_path: String,
+    #[schemars(description = "Starting line number")]
+    pub line_start: u32,
+    #[schemars(description = "Ending line number")]
+    pub line_end: u32,
+    #[schemars(description = "The comment text")]
+    pub body: String,
+    #[schemars(
+        description = "Thread origin: 'Comment' for regular comments, 'AgentExplanation' for proactive code explanations. Defaults to 'Comment'."
+    )]
+    pub origin: Option<String>,
+}
+
 fn format_error(e: ClientError) -> String {
     e.to_string()
 }
@@ -223,6 +241,35 @@ impl PreflightMcp {
             .map_err(format_error)?;
 
         serde_json::to_string_pretty(&review).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "Create a new comment thread on a file. Use origin 'AgentExplanation' to proactively explain code."
+    )]
+    async fn create_thread(
+        &self,
+        Parameters(input): Parameters<CreateThreadInput>,
+    ) -> Result<String, String> {
+        let origin = input.origin.unwrap_or_else(|| "Comment".to_string());
+        let body = serde_json::json!({
+            "file_path": input.file_path,
+            "line_start": input.line_start,
+            "line_end": input.line_end,
+            "origin": origin,
+            "body": input.body,
+            "author_type": "Agent",
+        });
+
+        let thread: serde_json::Value = self
+            .client
+            .post(
+                &format!("/api/reviews/{}/threads", input.review_id),
+                &body,
+            )
+            .await
+            .map_err(format_error)?;
+
+        serde_json::to_string_pretty(&thread).map_err(|e| e.to_string())
     }
 }
 
