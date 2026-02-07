@@ -88,6 +88,14 @@ pub struct CreateThreadInput {
     pub origin: Option<String>,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct UpdateReviewStatusInput {
+    #[schemars(description = "UUID of the review")]
+    pub review_id: String,
+    #[schemars(description = "New status: 'Open' or 'Closed'")]
+    pub status: String,
+}
+
 fn format_error(e: ClientError) -> String {
     e.to_string()
 }
@@ -270,6 +278,27 @@ impl PreflightMcp {
             .map_err(format_error)?;
 
         serde_json::to_string_pretty(&thread).map_err(|e| e.to_string())
+    }
+
+    #[tool(description = "Update a review's status (open or close it)")]
+    async fn update_review_status(
+        &self,
+        Parameters(input): Parameters<UpdateReviewStatusInput>,
+    ) -> Result<String, String> {
+        let body = serde_json::json!({ "status": input.status });
+
+        self.client
+            .patch(
+                &format!("/api/reviews/{}/status", input.review_id),
+                &body,
+            )
+            .await
+            .map_err(format_error)?;
+
+        Ok(format!(
+            "Review {} status updated to {}",
+            input.review_id, input.status
+        ))
     }
 }
 
