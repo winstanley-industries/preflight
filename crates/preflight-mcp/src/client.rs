@@ -94,6 +94,25 @@ impl PreflightClient {
             .map_err(|e| ClientError::DeserializeError(e.to_string()))
     }
 
+    pub async fn patch(&self, path: &str, body: &serde_json::Value) -> Result<(), ClientError> {
+        let url = format!("{}{path}", self.base_url);
+        let response = self
+            .http
+            .patch(&url)
+            .json(body)
+            .send()
+            .await
+            .map_err(|e| ClientError::ConnectionFailed(format!("{}: {e}", self.base_url)))?;
+
+        let status = response.status().as_u16();
+        if !response.status().is_success() {
+            let body = response.text().await.unwrap_or_default();
+            return Err(ClientError::ApiError { status, body });
+        }
+
+        Ok(())
+    }
+
     /// Connect to the API's WebSocket endpoint and spawn a background task
     /// that reads events and rebroadcasts them. Auto-reconnects with
     /// exponential backoff on disconnect.
