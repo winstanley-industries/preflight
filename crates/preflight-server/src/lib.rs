@@ -41,8 +41,11 @@ pub fn app(store: Arc<dyn ReviewStore>) -> Router {
         .with_state(state)
 }
 
-async fn health() -> &'static str {
-    "ok"
+async fn health() -> axum::Json<serde_json::Value> {
+    axum::Json(serde_json::json!({
+        "status": "ok",
+        "version": env!("CARGO_PKG_VERSION")
+    }))
 }
 
 async fn static_handler(uri: axum::http::Uri) -> Response {
