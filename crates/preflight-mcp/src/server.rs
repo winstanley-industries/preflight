@@ -433,8 +433,13 @@ impl ServerHandler for PreflightMcp {
                 ..Default::default()
             },
             instructions: Some(
-                "Preflight is a local code review tool. Use these tools to see reviews, \
-                 read diffs, view human comments, and reply to comment threads."
+                "Preflight is a local code review tool. Use these tools to participate in code reviews.\n\n\
+                 Core loop: list_reviews → get_review → get_diff → get_comments → respond_to_comment\n\n\
+                 Agent actions: create_review (start a review), create_thread (comment on code or explain it \
+                 with origin 'AgentExplanation'), submit_revision (after making changes)\n\n\
+                 Lifecycle: update_review_status (open/close), resolve_thread (resolve/reopen)\n\n\
+                 Notifications: Use wait_for_event from a background task to monitor for new comments, \
+                 threads, or status changes. It blocks until a matching event arrives or times out."
                     .to_string(),
             ),
         }
