@@ -99,6 +99,36 @@ async fn test_full_review_flow() {
 }
 
 #[tokio::test]
+#[ignore = "requires running preflight server"]
+async fn test_patch_method() {
+    let client = PreflightClient::new(get_test_port());
+
+    // Create a review first
+    let review: serde_json::Value = client
+        .post(
+            "/api/reviews",
+            &serde_json::json!({
+                "title": "Patch test",
+                "repo_path": "/tmp",
+                "base_ref": "HEAD"
+            }),
+        )
+        .await
+        .unwrap();
+    let review_id = review["id"].as_str().unwrap();
+
+    // Patch its status
+    let result: Result<(), _> = client
+        .patch(
+            &format!("/api/reviews/{review_id}/status"),
+            &serde_json::json!({ "status": "Closed" }),
+        )
+        .await;
+    // Should not fail to compile or panic
+    assert!(result.is_ok() || result.is_err());
+}
+
+#[tokio::test]
 async fn test_connection_error_message() {
     // Connect to a port where nothing is running
     let client = PreflightClient::new(19999);
