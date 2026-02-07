@@ -440,3 +440,137 @@ impl ServerHandler for PreflightMcp {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use preflight_core::ws::{WsEvent, WsEventType};
+    use rmcp::handler::server::wrapper::Parameters;
+
+    fn test_mcp() -> PreflightMcp {
+        let client = crate::client::PreflightClient::new(19999); // dummy port
+        let (ws_tx, _) = broadcast::channel(64);
+        PreflightMcp::new(client, ws_tx)
+    }
+
+    #[tokio::test]
+    async fn wait_for_event_receives_matching_event() {
+        let mcp = test_mcp();
+        let ws_tx = mcp.ws_tx.clone();
+
+        // Spawn event sender after a short delay
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            let _ = ws_tx.send(WsEvent {
+                event_type: WsEventType::CommentAdded,
+                review_id: "test-review".to_string(),
+                payload: serde_json::json!({"thread_id": "t1"}),
+                timestamp: chrono::Utc::now(),
+            });
+        });
+
+        let result = mcp
+            .wait_for_event(Parameters(WaitForEventInput {
+                review_id: Some("test-review".to_string()),
+                event_types: Some(vec!["comment_added".to_string()]),
+                timeout_secs: Some(5),
+            }))
+            .await
+            .unwrap();
+
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["event_type"], "comment_added");
+        assert_eq!(parsed["review_id"], "test-review");
+    }
+
+    #[tokio::test]
+    async fn wait_for_event_times_out() {
+        let mcp = test_mcp();
+
+        let result = mcp
+            .wait_for_event(Parameters(WaitForEventInput {
+                review_id: None,
+                event_types: None,
+                timeout_secs: Some(1),
+            }))
+            .await
+            .unwrap();
+
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["timeout"], true);
+    }
+
+    #[tokio::test]
+    async fn wait_for_event_filters_by_review_id() {
+        let mcp = test_mcp();
+        let ws_tx = mcp.ws_tx.clone();
+
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            // Send event for wrong review
+            let _ = ws_tx.send(WsEvent {
+                event_type: WsEventType::CommentAdded,
+                review_id: "other-review".to_string(),
+                payload: serde_json::json!({}),
+                timestamp: chrono::Utc::now(),
+            });
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            // Send event for correct review
+            let _ = ws_tx.send(WsEvent {
+                event_type: WsEventType::CommentAdded,
+                review_id: "my-review".to_string(),
+                payload: serde_json::json!({"thread_id": "t2"}),
+                timestamp: chrono::Utc::now(),
+            });
+        });
+
+        let result = mcp
+            .wait_for_event(Parameters(WaitForEventInput {
+                review_id: Some("my-review".to_string()),
+                event_types: None,
+                timeout_secs: Some(5),
+            }))
+            .await
+            .unwrap();
+
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["review_id"], "my-review");
+    }
+
+    #[tokio::test]
+    async fn wait_for_event_filters_by_event_type() {
+        let mcp = test_mcp();
+        let ws_tx = mcp.ws_tx.clone();
+
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            // Send non-matching event type
+            let _ = ws_tx.send(WsEvent {
+                event_type: WsEventType::ReviewStatusChanged,
+                review_id: "r1".to_string(),
+                payload: serde_json::json!({}),
+                timestamp: chrono::Utc::now(),
+            });
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            // Send matching event type
+            let _ = ws_tx.send(WsEvent {
+                event_type: WsEventType::ThreadCreated,
+                review_id: "r1".to_string(),
+                payload: serde_json::json!({"thread_id": "t3"}),
+                timestamp: chrono::Utc::now(),
+            });
+        });
+
+        let result = mcp
+            .wait_for_event(Parameters(WaitForEventInput {
+                review_id: None,
+                event_types: Some(vec!["thread_created".to_string()]),
+                timeout_secs: Some(5),
+            }))
+            .await
+            .unwrap();
+
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["event_type"], "thread_created");
+    }
+}
