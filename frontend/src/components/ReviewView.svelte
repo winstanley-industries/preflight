@@ -18,6 +18,7 @@
   import FileTree from "./FileTree.svelte";
   import DiffView from "./DiffView.svelte";
   import ThreadPanel from "./ThreadPanel.svelte";
+  import ResizeHandle from "./ResizeHandle.svelte";
   import RevisionTimeline from "./RevisionTimeline.svelte";
 
   interface Props {
@@ -38,6 +39,92 @@
   let highlightThreadId = $state<string | null>(null);
   let navigateToLine = $state<number | null>(null);
   let diffLines = $state<Set<number>>(new Set());
+
+  // Resizable pane state
+  const FILE_TREE_DEFAULT = 240;
+  const FILE_TREE_MIN = 160;
+  const FILE_TREE_MAX = 480;
+  const THREAD_PANEL_DEFAULT = 320;
+  const THREAD_PANEL_MIN = 240;
+  const THREAD_PANEL_MAX = 600;
+  const DIFF_MIN = 300;
+
+  let fileTreeWidth = $state(
+    Number(localStorage.getItem("preflight:fileTreeWidth")) ||
+      FILE_TREE_DEFAULT,
+  );
+  let threadPanelWidth = $state(
+    Number(localStorage.getItem("preflight:threadPanelWidth")) ||
+      THREAD_PANEL_DEFAULT,
+  );
+  let isDragging = $state(false);
+  let containerEl = $state<HTMLDivElement | null>(null);
+
+  function clampWidths() {
+    if (!containerEl) return;
+    const totalWidth = containerEl.clientWidth;
+    const threadW = threadsPanelOpen ? threadPanelWidth : 0;
+    const available = totalWidth - DIFF_MIN;
+
+    if (fileTreeWidth + threadW > available) {
+      // Shrink both proportionally to fit
+      const ratio = available / (fileTreeWidth + threadW);
+      fileTreeWidth = Math.max(
+        FILE_TREE_MIN,
+        Math.round(fileTreeWidth * ratio),
+      );
+      if (threadsPanelOpen) {
+        threadPanelWidth = Math.max(
+          THREAD_PANEL_MIN,
+          Math.round(threadPanelWidth * ratio),
+        );
+      }
+    }
+
+    fileTreeWidth = Math.max(
+      FILE_TREE_MIN,
+      Math.min(FILE_TREE_MAX, fileTreeWidth),
+    );
+    if (threadsPanelOpen) {
+      threadPanelWidth = Math.max(
+        THREAD_PANEL_MIN,
+        Math.min(THREAD_PANEL_MAX, threadPanelWidth),
+      );
+    }
+  }
+
+  function maxForFileTree(): number {
+    if (!containerEl) return FILE_TREE_MAX;
+    const threadW = threadsPanelOpen ? threadPanelWidth : 0;
+    return Math.min(
+      FILE_TREE_MAX,
+      containerEl.clientWidth - DIFF_MIN - threadW,
+    );
+  }
+
+  function maxForThreadPanel(): number {
+    if (!containerEl) return THREAD_PANEL_MAX;
+    return Math.min(
+      THREAD_PANEL_MAX,
+      containerEl.clientWidth - DIFF_MIN - fileTreeWidth,
+    );
+  }
+
+  function saveWidths() {
+    localStorage.setItem("preflight:fileTreeWidth", String(fileTreeWidth));
+    localStorage.setItem(
+      "preflight:threadPanelWidth",
+      String(threadPanelWidth),
+    );
+  }
+
+  // ResizeObserver to clamp panes when the window shrinks
+  $effect(() => {
+    if (!containerEl) return;
+    const observer = new ResizeObserver(() => clampWidths());
+    observer.observe(containerEl);
+    return () => observer.disconnect();
+  });
 
   let selectedFileStatus = $derived(
     files.find((f) => f.path === selectedFile)?.status ?? "Modified",
@@ -261,9 +348,16 @@
     {/if}
 
     <!-- Three-panel body -->
-    <div class="flex flex-1 min-h-0">
+    <div
+      class="flex flex-1 min-h-0"
+      class:select-none={isDragging}
+      bind:this={containerEl}
+    >
       <!-- File tree -->
-      <aside class="w-60 border-r border-border overflow-y-auto shrink-0">
+      <aside
+        class="border-r border-border overflow-y-auto shrink-0"
+        style:width="{fileTreeWidth}px"
+      >
         <FileTree
           {files}
           {selectedFile}
@@ -274,6 +368,25 @@
           }}
         />
       </aside>
+
+      <ResizeHandle
+        side="left"
+        onDragStart={() => (isDragging = true)}
+        onDrag={(delta) => {
+          fileTreeWidth = Math.max(
+            FILE_TREE_MIN,
+            Math.min(maxForFileTree(), fileTreeWidth + delta),
+          );
+        }}
+        onDragEnd={() => {
+          isDragging = false;
+          saveWidths();
+        }}
+        onReset={() => {
+          fileTreeWidth = FILE_TREE_DEFAULT;
+          saveWidths();
+        }}
+      />
 
       <!-- Diff -->
       <main class="flex-1 overflow-auto min-w-0">
@@ -306,7 +419,28 @@
 
       <!-- Thread panel -->
       {#if threadsPanelOpen}
-        <aside class="w-80 border-l border-border overflow-y-auto shrink-0">
+        <ResizeHandle
+          side="right"
+          onDragStart={() => (isDragging = true)}
+          onDrag={(delta) => {
+            threadPanelWidth = Math.max(
+              THREAD_PANEL_MIN,
+              Math.min(maxForThreadPanel(), threadPanelWidth + delta),
+            );
+          }}
+          onDragEnd={() => {
+            isDragging = false;
+            saveWidths();
+          }}
+          onReset={() => {
+            threadPanelWidth = THREAD_PANEL_DEFAULT;
+            saveWidths();
+          }}
+        />
+        <aside
+          class="border-l border-border overflow-y-auto shrink-0"
+          style:width="{threadPanelWidth}px"
+        >
           <ThreadPanel
             {threads}
             {highlightThreadId}
