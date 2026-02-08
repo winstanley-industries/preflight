@@ -14,6 +14,7 @@ pub struct WsEvent {
 pub enum WsEventType {
     ReviewCreated,
     ReviewStatusChanged,
+    ReviewDeleted,
     RevisionCreated,
     ThreadCreated,
     CommentAdded,

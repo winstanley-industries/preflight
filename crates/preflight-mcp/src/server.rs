@@ -126,6 +126,7 @@ fn event_type_matches(event_type: &WsEventType, filter: &str) -> bool {
     match filter {
         "review_created" => matches!(event_type, WsEventType::ReviewCreated),
         "review_status_changed" => matches!(event_type, WsEventType::ReviewStatusChanged),
+        "review_deleted" => matches!(event_type, WsEventType::ReviewDeleted),
         "revision_created" => matches!(event_type, WsEventType::RevisionCreated),
         "thread_created" => matches!(event_type, WsEventType::ThreadCreated),
         "comment_added" => matches!(event_type, WsEventType::CommentAdded),
