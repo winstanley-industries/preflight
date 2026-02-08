@@ -259,7 +259,7 @@
       </aside>
 
       <!-- Diff -->
-      <main class="flex-1 overflow-y-auto min-w-0">
+      <main class="flex-1 overflow-auto min-w-0">
         {#if selectedFile}
           <DiffView
             {reviewId}

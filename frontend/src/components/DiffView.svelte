@@ -41,6 +41,11 @@
   let fileContent = $state<FileContentResponse | null>(null);
   let fileLoading = $state(false);
   let fileVersion = $state<"new" | "old">("new");
+  let wordWrap = $state(true);
+  let contentWs = $derived(
+    wordWrap ? "whitespace-pre-wrap break-words" : "whitespace-pre",
+  );
+  let containerFit = $derived(wordWrap ? "" : "w-fit");
 
   // Line selection state
   let selectionStart = $state<number | null>(null);
@@ -242,6 +247,16 @@
         }
       }}>File</button
     >
+
+    <span class="mx-1 text-border">|</span>
+
+    <button
+      class="text-xs px-2 py-0.5 rounded cursor-pointer {wordWrap
+        ? 'bg-bg-active text-text'
+        : 'text-text-muted hover:text-text'}"
+      onclick={() => (wordWrap = !wordWrap)}
+      title={wordWrap ? "Disable word wrap" : "Enable word wrap"}>Wrap</button
+    >
   </div>
 
   {#if viewMode === "file"}
@@ -282,7 +297,7 @@
   {/if}
 
   {#if viewMode === "diff"}
-    <div class="font-mono text-sm">
+    <div class="font-mono text-sm min-w-full {containerFit}">
       {#each diff.hunks as hunk, hunkIdx (hunkIdx)}
         <!-- Hunk header -->
         <div
@@ -344,7 +359,7 @@
             {#if line.highlighted}
               <!-- eslint-disable svelte/no-at-html-tags -->
               <span
-                class="flex-1 px-2 whitespace-pre leading-6"
+                class="flex-1 px-2 leading-6 {contentWs}"
                 class:text-diff-add-text={line.kind === "Added"}
                 class:text-diff-remove-text={line.kind === "Removed"}
                 >{@html line.highlighted}</span
@@ -352,7 +367,7 @@
               <!-- eslint-enable svelte/no-at-html-tags -->
             {:else}
               <span
-                class="flex-1 px-2 whitespace-pre leading-6"
+                class="flex-1 px-2 leading-6 {contentWs}"
                 class:text-diff-add-text={line.kind === "Added"}
                 class:text-diff-remove-text={line.kind === "Removed"}
               >
@@ -386,7 +401,7 @@
       <p class="text-text-muted text-sm">Loading file...</p>
     </div>
   {:else if fileContent}
-    <div class="font-mono text-sm">
+    <div class="font-mono text-sm min-w-full {containerFit}">
       {#each fileContent.lines as line (line.line_no)}
         {@const hasThread = threadLines.has(line.line_no)}
         {@const selected = isLineSelected(line.line_no)}
@@ -422,13 +437,12 @@
           </button>
           {#if line.highlighted}
             <!-- eslint-disable svelte/no-at-html-tags -->
-            <span class="flex-1 px-2 whitespace-pre leading-6"
+            <span class="flex-1 px-2 leading-6 {contentWs}"
               >{@html line.highlighted}</span
             >
             <!-- eslint-enable svelte/no-at-html-tags -->
           {:else}
-            <span class="flex-1 px-2 whitespace-pre leading-6"
-              >{line.content}</span
+            <span class="flex-1 px-2 leading-6 {contentWs}">{line.content}</span
             >
           {/if}
         </div>
