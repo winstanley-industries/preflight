@@ -30,7 +30,7 @@
   onkeydown={handleKeydown}
 >
   <div
-    class="bg-bg-primary border border-border-default rounded-lg p-6 max-w-sm w-full mx-4 shadow-lg"
+    class="bg-bg-surface border border-border rounded-lg p-6 max-w-sm w-full mx-4 shadow-lg"
     role="dialog"
     tabindex="-1"
     onclick={(e) => e.stopPropagation()}
