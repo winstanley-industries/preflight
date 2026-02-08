@@ -23,7 +23,7 @@ You (browser) <-> Preflight <-> MCP <-> Your AI Agent
 brew install winstanley-industries/preflight/preflight
 ```
 
-**Linux:** Download a binary from [GitHub Releases](https://github.com/ASmithOWL/preflight/releases).
+**Linux:** Download a binary from [GitHub Releases](https://github.com/winstanley-industries/preflight/releases).
 
 **From source:**
 
