@@ -35,6 +35,13 @@ pub enum AuthorType {
 
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AgentStatus {
+    Seen,
+    Working,
+}
+
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RevisionTrigger {
     Agent,
     Manual,
