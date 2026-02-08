@@ -15,7 +15,7 @@ use crate::types::{
 };
 use preflight_core::diff::{DiffLine, FileStatus, Hunk, LineKind};
 use preflight_core::file_reader;
-use preflight_core::review::ThreadStatus;
+use preflight_core::review::{ThreadOrigin, ThreadStatus};
 
 #[derive(Debug, Deserialize)]
 struct ContentQuery {
@@ -61,7 +61,9 @@ async fn list_files(
             let thread_count = file_threads.len();
             let open_thread_count = file_threads
                 .iter()
-                .filter(|t| t.status == ThreadStatus::Open)
+                .filter(|t| {
+                    t.status == ThreadStatus::Open && t.origin != ThreadOrigin::AgentExplanation
+                })
                 .count();
             FileListEntry {
                 path,

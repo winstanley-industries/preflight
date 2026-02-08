@@ -10,7 +10,7 @@ use crate::error::ApiError;
 use crate::state::AppState;
 use crate::types::{CreateReviewRequest, ReviewResponse, UpdateReviewStatusRequest};
 use crate::ws::{WsEvent, WsEventType};
-use preflight_core::review::ThreadStatus;
+use preflight_core::review::{ThreadOrigin, ThreadStatus};
 use preflight_core::store::CreateReviewInput;
 
 pub fn router() -> axum::Router<AppState> {
@@ -106,7 +106,7 @@ async fn get_review(
     let thread_count = threads.len();
     let open_thread_count = threads
         .iter()
-        .filter(|t| t.status == ThreadStatus::Open)
+        .filter(|t| t.status == ThreadStatus::Open && t.origin != ThreadOrigin::AgentExplanation)
         .count();
     let revisions = state.store.get_revisions(id).await?;
     let file_count = revisions.last().map(|r| r.files.len()).unwrap_or(0);
