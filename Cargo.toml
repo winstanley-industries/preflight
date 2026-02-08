@@ -18,7 +18,8 @@ serde_json = "1.0.149"
 tokio = { version = "1.49.0", features = ["full"] }
 uuid = { version = "1.20.0", features = ["v4", "serde"] }
 chrono = { version = "0.4.43", features = ["serde"] }
-syntect = { version = "5.3.0", default-features = false, features = ["default-syntaxes", "default-themes", "html", "parsing", "dump-load", "regex-onig"] }
+syntect = { version = "5.3.0", default-features = false, features = ["html", "parsing", "dump-load", "regex-onig"] }
+two-face = { version = "0.5.1", default-features = false, features = ["syntect-onig"] }
 clap = { version = "4.5.57", features = ["derive", "env"] }
 reqwest = { version = "0.13.1", default-features = false, features = ["json", "rustls"] }
 rmcp = { version = "0.14.0", features = ["server", "transport-io"] }
