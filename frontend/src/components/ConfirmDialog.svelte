@@ -46,7 +46,7 @@
         Cancel
       </button>
       <button
-        class="px-4 py-2 rounded-md text-sm bg-badge-deleted text-white hover:bg-badge-deleted/80 transition-colors cursor-pointer"
+        class="px-4 py-2 rounded-md text-sm bg-red-600 text-white hover:bg-red-500 transition-colors cursor-pointer"
         onclick={onconfirm}
       >
         {confirmLabel}
