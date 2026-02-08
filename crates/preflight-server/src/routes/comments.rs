@@ -29,10 +29,10 @@ async fn add_comment(
             body: request.body,
         })
         .await?;
-    // Reset agent status when a human posts a new comment
-    if comment.author_type == preflight_core::review::AuthorType::Human {
-        state.agent_status.lock().await.remove(&id);
-    }
+    // Reset agent status on any new comment:
+    // - Human comment means agent needs to re-acknowledge
+    // - Agent comment means agent finished working
+    state.agent_status.lock().await.remove(&id);
     let response = CommentResponse {
         id: comment.id,
         author_type: comment.author_type,
@@ -265,7 +265,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_agent_comment_preserves_agent_status() {
+    async fn test_agent_comment_clears_agent_status() {
         let app = test_app().await;
         let review_id = create_review(&app).await;
         let thread_id = create_thread(&app, &review_id).await;
@@ -285,7 +285,7 @@ mod tests {
             .await
             .unwrap();
 
-        // Add an agent comment (should NOT reset)
+        // Add an agent comment (should reset — agent finished working)
         app.clone()
             .oneshot(
                 Request::builder()
@@ -295,7 +295,7 @@ mod tests {
                     .body(Body::from(
                         serde_json::json!({
                             "author_type": "Agent",
-                            "body": "Working on it"
+                            "body": "Here's my response"
                         })
                         .to_string(),
                     ))
@@ -304,7 +304,7 @@ mod tests {
             .await
             .unwrap();
 
-        // Check agent_status is still Working
+        // Check agent_status is cleared
         let response = app
             .oneshot(
                 Request::builder()
@@ -317,7 +317,7 @@ mod tests {
 
         let json = body_json(response).await;
         let threads = json.as_array().unwrap();
-        assert_eq!(threads[0]["agent_status"], "Working");
+        assert!(threads[0]["agent_status"].is_null());
     }
 
     #[tokio::test]
