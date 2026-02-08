@@ -94,10 +94,15 @@ impl ReviewStore for JsonFileStore {
             .reviews
             .values()
             .map(|review| {
-                let thread_count = state
+                let review_threads: Vec<_> = state
                     .threads
                     .values()
                     .filter(|t| t.review_id == review.id)
+                    .collect();
+                let thread_count = review_threads.len();
+                let open_thread_count = review_threads
+                    .iter()
+                    .filter(|t| t.status == ThreadStatus::Open)
                     .count();
                 let file_count = state
                     .revisions
@@ -111,6 +116,7 @@ impl ReviewStore for JsonFileStore {
                     title: review.title.clone(),
                     status: review.status.clone(),
                     thread_count,
+                    open_thread_count,
                     file_count,
                 }
             })
@@ -763,6 +769,43 @@ mod tests {
             .unwrap();
         let result = JsonFileStore::new(&path).await;
         assert!(matches!(result, Err(StoreError::PersistenceError(_))));
+    }
+
+    #[tokio::test]
+    async fn test_list_reviews_open_thread_count() {
+        let (store, _dir) = test_store().await;
+        let review = create_review_with_store(&store).await;
+        // Create two threads
+        for body in ["first", "second"] {
+            store
+                .create_thread(CreateThreadInput {
+                    review_id: review.id,
+                    file_path: "src/main.rs".into(),
+                    line_start: 1,
+                    line_end: 1,
+                    origin: ThreadOrigin::Comment,
+                    initial_comment_body: body.into(),
+                    initial_comment_author: AuthorType::Human,
+                    revision_number: None,
+                    content_snippet: None,
+                })
+                .await
+                .unwrap();
+        }
+        // Both open
+        let list = store.list_reviews().await;
+        assert_eq!(list[0].thread_count, 2);
+        assert_eq!(list[0].open_thread_count, 2);
+
+        // Resolve one
+        let threads = store.get_threads(review.id, None).await.unwrap();
+        store
+            .update_thread_status(threads[0].id, ThreadStatus::Resolved)
+            .await
+            .unwrap();
+        let list = store.list_reviews().await;
+        assert_eq!(list[0].thread_count, 2);
+        assert_eq!(list[0].open_thread_count, 1);
     }
 
     #[tokio::test]
