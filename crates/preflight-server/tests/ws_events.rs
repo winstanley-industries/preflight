@@ -24,6 +24,7 @@ async fn app_with_ws_rx() -> (
         store: Arc::new(store),
         highlighter: Arc::new(preflight_core::highlight::Highlighter::new()),
         ws_tx,
+        agent_status: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
     };
 
     use axum::routing::get;

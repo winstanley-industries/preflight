@@ -10,7 +10,8 @@ use uuid::Uuid;
 use crate::error::ApiError;
 use crate::state::AppState;
 use crate::types::{
-    CommentResponse, CreateThreadRequest, ThreadResponse, UpdateThreadStatusRequest,
+    CommentResponse, CreateThreadRequest, ThreadResponse, UpdateAgentStatusRequest,
+    UpdateThreadStatusRequest,
 };
 use crate::ws::{WsEvent, WsEventType};
 use preflight_core::store::CreateThreadInput;
@@ -23,8 +24,10 @@ pub fn review_router() -> axum::Router<AppState> {
 
 /// Routes nested under /api/threads
 pub fn thread_router() -> axum::Router<AppState> {
-    use axum::routing::patch;
-    axum::Router::new().route("/{id}/status", patch(update_thread_status))
+    use axum::routing::{patch, put};
+    axum::Router::new()
+        .route("/{id}/status", patch(update_thread_status))
+        .route("/{id}/agent-status", put(set_agent_status))
 }
 
 #[derive(Debug, Deserialize)]
@@ -57,6 +60,7 @@ async fn create_thread(
         line_end: thread.line_end,
         origin: thread.origin,
         status: thread.status,
+        agent_status: None,
         comments: thread
             .comments
             .into_iter()
@@ -85,28 +89,33 @@ async fn list_threads(
     Query(filter): Query<ThreadFilter>,
 ) -> Result<Json<Vec<ThreadResponse>>, ApiError> {
     let threads = state.store.get_threads(id, filter.file.as_deref()).await?;
+    let agent_statuses = state.agent_status.lock().await;
     let responses = threads
         .into_iter()
-        .map(|thread| ThreadResponse {
-            id: thread.id,
-            review_id: thread.review_id,
-            file_path: thread.file_path,
-            line_start: thread.line_start,
-            line_end: thread.line_end,
-            origin: thread.origin,
-            status: thread.status,
-            comments: thread
-                .comments
-                .into_iter()
-                .map(|c| CommentResponse {
-                    id: c.id,
-                    author_type: c.author_type,
-                    body: c.body,
-                    created_at: c.created_at,
-                })
-                .collect(),
-            created_at: thread.created_at,
-            updated_at: thread.updated_at,
+        .map(|thread| {
+            let agent_status = agent_statuses.get(&thread.id).cloned();
+            ThreadResponse {
+                id: thread.id,
+                review_id: thread.review_id,
+                file_path: thread.file_path,
+                line_start: thread.line_start,
+                line_end: thread.line_end,
+                origin: thread.origin,
+                status: thread.status,
+                agent_status,
+                comments: thread
+                    .comments
+                    .into_iter()
+                    .map(|c| CommentResponse {
+                        id: c.id,
+                        author_type: c.author_type,
+                        body: c.body,
+                        created_at: c.created_at,
+                    })
+                    .collect(),
+                created_at: thread.created_at,
+                updated_at: thread.updated_at,
+            }
         })
         .collect();
     Ok(Json(responses))
@@ -132,6 +141,30 @@ async fn update_thread_status(
             timestamp: Utc::now(),
         });
     }
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn set_agent_status(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<UpdateAgentStatusRequest>,
+) -> Result<StatusCode, ApiError> {
+    // Verify thread exists
+    let thread = state.store.get_thread(id).await?;
+    state
+        .agent_status
+        .lock()
+        .await
+        .insert(id, request.status.clone());
+    let _ = state.ws_tx.send(WsEvent {
+        event_type: WsEventType::ThreadAcknowledged,
+        review_id: thread.review_id.to_string(),
+        payload: serde_json::json!({
+            "thread_id": id.to_string(),
+            "agent_status": request.status
+        }),
+        timestamp: Utc::now(),
+    });
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -389,6 +422,69 @@ mod tests {
         let arr = json.as_array().unwrap();
         assert_eq!(arr.len(), 1);
         assert_eq!(arr[0]["file_path"], "src/main.rs");
+    }
+
+    #[tokio::test]
+    async fn test_set_agent_status() {
+        let app = test_app().await;
+        let review_id = create_review(&app).await;
+        let thread_json = create_thread(&app, &review_id).await;
+        let thread_id = thread_json["id"].as_str().unwrap();
+
+        // Set agent status to Seen
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri(format!("/api/threads/{thread_id}/agent-status"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({ "status": "Seen" }).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+
+        // Verify agent_status appears in thread listing
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/reviews/{review_id}/threads"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let json = body_json(response).await;
+        let threads = json.as_array().unwrap();
+        assert_eq!(threads[0]["agent_status"], "Seen");
+    }
+
+    #[tokio::test]
+    async fn test_agent_status_not_found() {
+        let app = test_app().await;
+        let fake_id = uuid::Uuid::new_v4();
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri(format!("/api/threads/{fake_id}/agent-status"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({ "status": "Seen" }).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]
