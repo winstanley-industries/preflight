@@ -38,6 +38,13 @@
         {statusIcon[file.status]}
       </span>
       <span class="truncate">{file.path}</span>
+      {#if file.open_thread_count > 0}
+        <span
+          class="ml-auto shrink-0 text-xs px-1.5 py-0.5 rounded-full bg-status-open/15 text-status-open"
+        >
+          {file.open_thread_count}
+        </span>
+      {/if}
     </button>
   {/each}
 </nav>
