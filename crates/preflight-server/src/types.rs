@@ -67,6 +67,7 @@ pub struct ReviewResponse {
     pub status: ReviewStatus,
     pub file_count: usize,
     pub thread_count: usize,
+    pub open_thread_count: usize,
     pub revision_count: usize,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
