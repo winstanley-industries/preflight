@@ -281,6 +281,10 @@
           files = f;
         });
       }),
+      onEvent("thread_acknowledged", (event) => {
+        if (event.review_id !== reviewId) return;
+        if (selectedFile) loadThreads(selectedFile);
+      }),
       onReconnect(() => load()),
     ];
 

@@ -1,5 +1,6 @@
 import type {
   AddCommentRequest,
+  AgentStatus,
   CommentResponse,
   CreateReviewRequest,
   CreateRevisionRequest,
@@ -156,6 +157,22 @@ export function updateThreadStatus(
   return request(`/api/threads/${threadId}/status`, {
     method: "PATCH",
     body: JSON.stringify(req),
+  });
+}
+
+export function setAgentStatus(
+  threadId: string,
+  status: AgentStatus,
+): Promise<void> {
+  return request(`/api/threads/${threadId}/agent-status`, {
+    method: "PUT",
+    body: JSON.stringify({ status }),
+  });
+}
+
+export function pokeThread(threadId: string): Promise<void> {
+  return request(`/api/threads/${threadId}/poke`, {
+    method: "POST",
   });
 }
 

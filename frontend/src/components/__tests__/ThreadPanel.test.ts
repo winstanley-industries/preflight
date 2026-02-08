@@ -21,6 +21,7 @@ const OPEN_THREAD: ThreadResponse = {
   line_end: 8,
   origin: "Comment",
   status: "Open",
+  agent_status: null,
   comments: [
     { id: "c-1", author_type: "Human", body: "Looks wrong", created_at: "" },
     { id: "c-2", author_type: "Agent", body: "Will fix", created_at: "" },
