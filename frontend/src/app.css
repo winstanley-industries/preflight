@@ -88,6 +88,7 @@
 /* Markdown rendering in comment threads */
 .markdown-body {
   line-height: 1.5;
+  overflow-wrap: break-word;
 }
 
 .markdown-body p {
@@ -156,10 +157,16 @@
   color: var(--color-text-muted);
 }
 
-.markdown-body ul,
+.markdown-body ul {
+  margin: 0.25em 0;
+  padding-left: 1.5em;
+  list-style-type: disc;
+}
+
 .markdown-body ol {
   margin: 0.25em 0;
   padding-left: 1.5em;
+  list-style-type: decimal;
 }
 
 .markdown-body li {
