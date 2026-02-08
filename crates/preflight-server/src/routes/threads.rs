@@ -24,10 +24,11 @@ pub fn review_router() -> axum::Router<AppState> {
 
 /// Routes nested under /api/threads
 pub fn thread_router() -> axum::Router<AppState> {
-    use axum::routing::{patch, put};
+    use axum::routing::{patch, post, put};
     axum::Router::new()
         .route("/{id}/status", patch(update_thread_status))
         .route("/{id}/agent-status", put(set_agent_status))
+        .route("/{id}/poke", post(poke_thread))
 }
 
 #[derive(Debug, Deserialize)]
@@ -162,6 +163,23 @@ async fn set_agent_status(
         payload: serde_json::json!({
             "thread_id": id.to_string(),
             "agent_status": request.status
+        }),
+        timestamp: Utc::now(),
+    });
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn poke_thread(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, ApiError> {
+    let thread = state.store.get_thread(id).await?;
+    let _ = state.ws_tx.send(WsEvent {
+        event_type: WsEventType::ThreadPoked,
+        review_id: thread.review_id.to_string(),
+        payload: serde_json::json!({
+            "thread_id": id.to_string(),
+            "review_id": thread.review_id.to_string()
         }),
         timestamp: Utc::now(),
     });
@@ -509,5 +527,45 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    }
+
+    #[tokio::test]
+    async fn test_poke_thread() {
+        let app = test_app().await;
+        let review_id = create_review(&app).await;
+        let thread_json = create_thread(&app, &review_id).await;
+        let thread_id = thread_json["id"].as_str().unwrap();
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/api/threads/{thread_id}/poke"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    }
+
+    #[tokio::test]
+    async fn test_poke_thread_not_found() {
+        let app = test_app().await;
+        let fake_id = uuid::Uuid::new_v4();
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/api/threads/{fake_id}/poke"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 }
