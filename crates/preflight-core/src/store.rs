@@ -89,6 +89,8 @@ pub trait ReviewStore: Send + Sync {
     async fn get_review(&self, id: Uuid) -> Result<Review, StoreError>;
     async fn list_reviews(&self) -> Vec<ReviewSummary>;
     async fn update_review_status(&self, id: Uuid, status: ReviewStatus) -> Result<(), StoreError>;
+    async fn delete_review(&self, id: Uuid) -> Result<(), StoreError>;
+    async fn delete_closed_reviews(&self) -> Result<Vec<Uuid>, StoreError>;
 
     async fn create_thread(&self, input: CreateThreadInput) -> Result<CommentThread, StoreError>;
     async fn get_thread(&self, thread_id: Uuid) -> Result<CommentThread, StoreError>;

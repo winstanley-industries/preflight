@@ -1,12 +1,20 @@
 <script lang="ts">
-  import { listReviews } from "../lib/api";
+  import { listReviews, deleteReview, deleteClosedReviews } from "../lib/api";
   import { navigate } from "../lib/router.svelte";
   import { onEvent, onReconnect } from "../lib/ws";
   import type { ReviewResponse } from "../lib/types";
+  import ConfirmDialog from "./ConfirmDialog.svelte";
 
   let reviews = $state<ReviewResponse[]>([]);
   let error = $state<string | null>(null);
   let loading = $state(true);
+
+  // Confirmation dialog state
+  let confirmDialog = $state<{
+    title: string;
+    message: string;
+    onconfirm: () => void;
+  } | null>(null);
 
   function sortedReviews(): ReviewResponse[] {
     return [...reviews].sort((a, b) => {
@@ -15,6 +23,10 @@
         new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
       );
     });
+  }
+
+  function closedCount(): number {
+    return reviews.filter((r) => r.status === "Closed").length;
   }
 
   function relativeTime(iso: string): string {
@@ -41,6 +53,44 @@
       });
   }
 
+  function handleDeleteReview(e: MouseEvent, review: ReviewResponse) {
+    e.stopPropagation();
+    confirmDialog = {
+      title: "Delete review",
+      message: `Delete "${review.title ?? "Untitled review"}"? This cannot be undone.`,
+      onconfirm: async () => {
+        confirmDialog = null;
+        try {
+          await deleteReview(review.id);
+          reviews = reviews.filter((r) => r.id !== review.id);
+        } catch (err) {
+          // Review may have already been deleted
+          if (err instanceof Error && err.message.includes("404")) {
+            reviews = reviews.filter((r) => r.id !== review.id);
+          }
+        }
+      },
+    };
+  }
+
+  function handleClearClosed() {
+    const count = closedCount();
+    confirmDialog = {
+      title: "Clear closed reviews",
+      message: `Delete ${count} closed review${count !== 1 ? "s" : ""}? This cannot be undone.`,
+      onconfirm: async () => {
+        confirmDialog = null;
+        try {
+          await deleteClosedReviews();
+          reviews = reviews.filter((r) => r.status !== "Closed");
+        } catch {
+          // Reload to get fresh state
+          loadReviews();
+        }
+      },
+    };
+  }
+
   $effect(() => {
     loadReviews();
 
@@ -57,6 +107,9 @@
             : r,
         );
       }),
+      onEvent("review_deleted", (event) => {
+        reviews = reviews.filter((r) => r.id !== event.review_id);
+      }),
       onReconnect(() => loadReviews()),
     ];
 
@@ -65,8 +118,18 @@
 </script>
 
 <div class="min-h-screen">
-  <header class="max-w-2xl mx-auto px-6 pt-12 pb-6">
+  <header
+    class="max-w-2xl mx-auto px-6 pt-12 pb-6 flex items-center justify-between"
+  >
     <h1 class="text-xl font-semibold">preflight</h1>
+    {#if closedCount() > 0}
+      <button
+        class="text-sm text-text-muted hover:text-badge-deleted transition-colors cursor-pointer"
+        onclick={handleClearClosed}
+      >
+        Clear closed ({closedCount()})
+      </button>
+    {/if}
   </header>
 
   <main class="max-w-2xl mx-auto px-6">
@@ -79,12 +142,20 @@
     {:else}
       <ul class="space-y-1">
         {#each sortedReviews() as review (review.id)}
-          <li>
-            <button
-              class="w-full text-left px-4 py-3 rounded-lg hover:bg-bg-hover transition-colors cursor-pointer"
+          <li class="group">
+            <div
+              class="flex items-center px-4 py-3 rounded-lg hover:bg-bg-hover transition-colors cursor-pointer"
+              role="button"
+              tabindex="0"
               onclick={() => navigate(`/reviews/${review.id}`)}
+              onkeydown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  navigate(`/reviews/${review.id}`);
+                }
+              }}
             >
-              <div class="flex items-center justify-between gap-4">
+              <div class="flex items-center justify-between gap-4 w-full">
                 <div class="flex items-center gap-3 min-w-0">
                   <span class="truncate font-medium">
                     {review.title ?? "Untitled review"}
@@ -113,12 +184,43 @@
                   <span class="text-text-faint"
                     >{relativeTime(review.updated_at)}</span
                   >
+                  <button
+                    class="opacity-0 group-hover:opacity-100 text-text-faint hover:text-badge-deleted transition-all cursor-pointer p-1 -m-1"
+                    onclick={(e) => handleDeleteReview(e, review)}
+                    title="Delete review"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <polyline points="3 6 5 6 21 6"></polyline>
+                      <path
+                        d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
+                      ></path>
+                    </svg>
+                  </button>
                 </div>
               </div>
-            </button>
+            </div>
           </li>
         {/each}
       </ul>
     {/if}
   </main>
 </div>
+
+{#if confirmDialog}
+  <ConfirmDialog
+    title={confirmDialog.title}
+    message={confirmDialog.message}
+    onconfirm={confirmDialog.onconfirm}
+    oncancel={() => (confirmDialog = null)}
+  />
+{/if}

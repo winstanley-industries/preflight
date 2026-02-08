@@ -66,6 +66,14 @@ export function updateReviewStatus(
   });
 }
 
+export function deleteReview(id: string): Promise<void> {
+  return request(`/api/reviews/${id}`, { method: "DELETE" });
+}
+
+export function deleteClosedReviews(): Promise<void> {
+  return request("/api/reviews", { method: "DELETE" });
+}
+
 // --- Revisions ---
 
 export function listRevisions(reviewId: string): Promise<RevisionResponse[]> {

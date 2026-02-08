@@ -97,6 +97,12 @@ pub struct UpdateReviewStatusInput {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct DeleteReviewInput {
+    #[schemars(description = "UUID of the review to delete")]
+    pub review_id: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct ResolveThreadInput {
     #[schemars(description = "UUID of the comment thread")]
     pub thread_id: String,
@@ -126,6 +132,7 @@ fn event_type_matches(event_type: &WsEventType, filter: &str) -> bool {
     match filter {
         "review_created" => matches!(event_type, WsEventType::ReviewCreated),
         "review_status_changed" => matches!(event_type, WsEventType::ReviewStatusChanged),
+        "review_deleted" => matches!(event_type, WsEventType::ReviewDeleted),
         "revision_created" => matches!(event_type, WsEventType::RevisionCreated),
         "thread_created" => matches!(event_type, WsEventType::ThreadCreated),
         "comment_added" => matches!(event_type, WsEventType::CommentAdded),
@@ -327,6 +334,21 @@ impl PreflightMcp {
             "Review {} status updated to {}",
             input.review_id, input.status
         ))
+    }
+
+    #[tool(
+        description = "Delete a review and all its associated data (threads, revisions, comments)"
+    )]
+    async fn delete_review(
+        &self,
+        Parameters(input): Parameters<DeleteReviewInput>,
+    ) -> Result<String, String> {
+        self.client
+            .delete(&format!("/api/reviews/{}", input.review_id))
+            .await
+            .map_err(format_error)?;
+
+        Ok(format!("Review {} deleted", input.review_id))
     }
 
     #[tool(description = "Resolve or reopen a comment thread")]

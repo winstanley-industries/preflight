@@ -143,6 +143,7 @@ export interface AddCommentRequest {
 export type WsEventType =
   | "review_created"
   | "review_status_changed"
+  | "review_deleted"
   | "revision_created"
   | "thread_created"
   | "comment_added"
