@@ -88,6 +88,8 @@ pub struct RevisionResponse {
 pub struct FileListEntry {
     pub path: String,
     pub status: FileStatus,
+    pub thread_count: usize,
+    pub open_thread_count: usize,
 }
 
 #[derive(Debug, Serialize)]
