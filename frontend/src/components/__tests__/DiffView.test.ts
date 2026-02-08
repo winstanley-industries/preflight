@@ -189,7 +189,7 @@ describe("DiffView", () => {
     // Line 2 has a thread — the bullet should be visible
     const bulletContainer = document.getElementById("L2");
     expect(bulletContainer).not.toBeNull();
-    const bullet = bulletContainer?.querySelector("button .text-accent");
+    const bullet = bulletContainer?.querySelector("button .text-status-open");
     expect(bullet?.textContent?.trim()).toBe("•");
   });
 
