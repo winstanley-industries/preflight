@@ -1,6 +1,7 @@
 <script lang="ts">
   import { addComment, updateThreadStatus } from "../lib/api";
   import type { ThreadResponse, ThreadOrigin } from "../lib/types";
+  import { renderMarkdown } from "../lib/markdown";
 
   interface Props {
     threads: ThreadResponse[];
@@ -120,7 +121,10 @@
                 >
                   {comment.author_type}
                 </span>
-                <span class="text-text">{comment.body}</span>
+                <div class="markdown-body text-text">
+                  <!-- eslint-disable-next-line svelte/no-at-html-tags -- sanitized by DOMPurify -->
+                  {@html renderMarkdown(comment.body)}
+                </div>
               </div>
             {/each}
           </div>
