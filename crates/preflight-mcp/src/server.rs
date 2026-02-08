@@ -336,7 +336,9 @@ impl PreflightMcp {
         ))
     }
 
-    #[tool(description = "Delete a review and all its associated data (threads, revisions, comments)")]
+    #[tool(
+        description = "Delete a review and all its associated data (threads, revisions, comments)"
+    )]
     async fn delete_review(
         &self,
         Parameters(input): Parameters<DeleteReviewInput>,

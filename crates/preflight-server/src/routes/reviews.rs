@@ -16,7 +16,12 @@ use preflight_core::store::CreateReviewInput;
 pub fn router() -> axum::Router<AppState> {
     use axum::routing::{get, patch};
     axum::Router::new()
-        .route("/", get(list_reviews).post(create_review).delete(delete_closed_reviews))
+        .route(
+            "/",
+            get(list_reviews)
+                .post(create_review)
+                .delete(delete_closed_reviews),
+        )
         .route("/{id}", get(get_review).delete(delete_review))
         .route("/{id}/status", patch(update_review_status))
 }
@@ -155,9 +160,7 @@ async fn delete_review(
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn delete_closed_reviews(
-    State(state): State<AppState>,
-) -> Result<StatusCode, ApiError> {
+async fn delete_closed_reviews(State(state): State<AppState>) -> Result<StatusCode, ApiError> {
     let deleted_ids = state.store.delete_closed_reviews().await?;
     for id in deleted_ids {
         let _ = state.ws_tx.send(WsEvent {
