@@ -15,7 +15,7 @@ impl Default for Highlighter {
 impl Highlighter {
     pub fn new() -> Self {
         Self {
-            syntax_set: SyntaxSet::load_defaults_newlines(),
+            syntax_set: two_face::syntax::extra_newlines(),
         }
     }
 
@@ -65,7 +65,7 @@ mod tests {
     fn language_name_works() {
         let hl = highlighter();
         assert_eq!(hl.language_name("rs"), Some("Rust"));
-        assert_eq!(hl.language_name("js"), Some("JavaScript"));
+        assert_eq!(hl.language_name("js"), Some("JavaScript (Babel)"));
         assert_eq!(hl.language_name("xyz123"), None);
     }
 
@@ -130,6 +130,23 @@ mod tests {
         let lines = hl.highlight_file("const x = 42;\n", "test.js").unwrap();
         assert_eq!(lines.len(), 1);
         assert!(lines[0].contains("sy-"));
+    }
+
+    #[test]
+    fn handles_typescript() {
+        let hl = highlighter();
+        assert_eq!(hl.language_name("ts"), Some("TypeScript"));
+        let lines = hl
+            .highlight_file("const x: string = \"hello\";\n", "test.ts")
+            .unwrap();
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].contains("sy-"));
+    }
+
+    #[test]
+    fn handles_tsx() {
+        let hl = highlighter();
+        assert!(hl.language_name("tsx").is_some());
     }
 
     #[test]

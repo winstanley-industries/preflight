@@ -12,6 +12,7 @@ tokio = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 syntect = { workspace = true }
+two-face = { workspace = true }
 similar = { workspace = true }
 
 [dev-dependencies]
