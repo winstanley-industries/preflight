@@ -145,3 +145,93 @@ jobs:
           name: Preflight v${{ needs.check-version.outputs.version }}
           generate_release_notes: true
           files: artifacts/*
+
+  update-homebrew:
+    name: Update Homebrew formula
+    needs: [check-version, release]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Compute SHA256 hashes
+        id: hashes
+        run: |
+          VERSION="${{ needs.check-version.outputs.version }}"
+          echo "sha256_macos_arm=$(shasum -a 256 artifacts/preflight-v${VERSION}-aarch64-apple-darwin.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "sha256_macos_intel=$(shasum -a 256 artifacts/preflight-v${VERSION}-x86_64-apple-darwin.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "sha256_linux_arm=$(shasum -a 256 artifacts/preflight-v${VERSION}-aarch64-unknown-linux-gnu.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "sha256_linux_intel=$(shasum -a 256 artifacts/preflight-v${VERSION}-x86_64-unknown-linux-gnu.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout homebrew tap
+        uses: actions/checkout@v6
+        with:
+          repository: winstanley-industries/homebrew-preflight
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      - name: Update formula
+        env:
+          VERSION: ${{ needs.check-version.outputs.version }}
+          SHA256_MACOS_ARM: ${{ steps.hashes.outputs.sha256_macos_arm }}
+          SHA256_MACOS_INTEL: ${{ steps.hashes.outputs.sha256_macos_intel }}
+          SHA256_LINUX_ARM: ${{ steps.hashes.outputs.sha256_linux_arm }}
+          SHA256_LINUX_INTEL: ${{ steps.hashes.outputs.sha256_linux_intel }}
+        run: |
+          cat > Formula/preflight.rb << 'FORMULA'
+          class Preflight < Formula
+            desc "Local code review tool for AI-generated changes"
+            homepage "https://github.com/winstanley-industries/preflight"
+            version "VERSION_PLACEHOLDER"
+            license "Apache-2.0"
+
+            on_macos do
+              on_arm do
+                url "https://github.com/winstanley-industries/preflight/releases/download/v#{version}/preflight-v#{version}-aarch64-apple-darwin.tar.gz"
+                sha256 "SHA256_MACOS_ARM_PLACEHOLDER"
+              end
+
+              on_intel do
+                url "https://github.com/winstanley-industries/preflight/releases/download/v#{version}/preflight-v#{version}-x86_64-apple-darwin.tar.gz"
+                sha256 "SHA256_MACOS_INTEL_PLACEHOLDER"
+              end
+            end
+
+            on_linux do
+              on_arm do
+                url "https://github.com/winstanley-industries/preflight/releases/download/v#{version}/preflight-v#{version}-aarch64-unknown-linux-gnu.tar.gz"
+                sha256 "SHA256_LINUX_ARM_PLACEHOLDER"
+              end
+
+              on_intel do
+                url "https://github.com/winstanley-industries/preflight/releases/download/v#{version}/preflight-v#{version}-x86_64-unknown-linux-gnu.tar.gz"
+                sha256 "SHA256_LINUX_INTEL_PLACEHOLDER"
+              end
+            end
+
+            def install
+              bin.install "preflight"
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/preflight --version")
+            end
+          end
+          FORMULA
+          sed -i "s/VERSION_PLACEHOLDER/${VERSION}/g" Formula/preflight.rb
+          sed -i "s/SHA256_MACOS_ARM_PLACEHOLDER/${SHA256_MACOS_ARM}/g" Formula/preflight.rb
+          sed -i "s/SHA256_MACOS_INTEL_PLACEHOLDER/${SHA256_MACOS_INTEL}/g" Formula/preflight.rb
+          sed -i "s/SHA256_LINUX_ARM_PLACEHOLDER/${SHA256_LINUX_ARM}/g" Formula/preflight.rb
+          sed -i "s/SHA256_LINUX_INTEL_PLACEHOLDER/${SHA256_LINUX_INTEL}/g" Formula/preflight.rb
+          # Remove leading whitespace from heredoc
+          sed -i 's/^          //' Formula/preflight.rb
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/preflight.rb
+          git commit -m "Update preflight to v${{ needs.check-version.outputs.version }}"
+          git push
