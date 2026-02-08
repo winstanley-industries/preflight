@@ -10,6 +10,7 @@ pub struct ReviewSummary {
     pub title: Option<String>,
     pub status: ReviewStatus,
     pub thread_count: usize,
+    pub open_thread_count: usize,
     pub file_count: usize,
 }
 

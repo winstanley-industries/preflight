@@ -173,6 +173,12 @@
       onEvent("thread_created", (event) => {
         if (event.review_id !== reviewId) return;
         if (selectedFile) loadThreads(selectedFile);
+        getReview(reviewId).then((r) => {
+          review = r;
+        });
+        listFiles(reviewId, selectedRevision || undefined).then((f) => {
+          files = f;
+        });
       }),
       onEvent("comment_added", (event) => {
         if (event.review_id !== reviewId) return;
@@ -181,6 +187,12 @@
       onEvent("thread_status_changed", (event) => {
         if (event.review_id !== reviewId) return;
         if (selectedFile) loadThreads(selectedFile);
+        getReview(reviewId).then((r) => {
+          review = r;
+        });
+        listFiles(reviewId, selectedRevision || undefined).then((f) => {
+          files = f;
+        });
       }),
       onReconnect(() => load()),
     ];
@@ -219,6 +231,11 @@
       >
         {review.status}
       </span>
+      {#if review.open_thread_count > 0}
+        <span class="text-xs text-status-open">
+          {review.open_thread_count} unresolved
+        </span>
+      {/if}
     </header>
 
     <!-- Revision timeline -->

@@ -24,6 +24,7 @@ export interface ReviewResponse {
   status: ReviewStatus;
   file_count: number;
   thread_count: number;
+  open_thread_count: number;
   revision_count: number;
   created_at: string;
   updated_at: string;
@@ -42,6 +43,8 @@ export interface RevisionResponse {
 export interface FileListEntry {
   path: string;
   status: FileStatus;
+  thread_count: number;
+  open_thread_count: number;
 }
 
 export interface FileDiffResponse {

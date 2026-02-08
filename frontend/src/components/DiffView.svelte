@@ -1,5 +1,6 @@
 <script lang="ts">
   import { tick } from "svelte";
+  import { SvelteMap } from "svelte/reactivity";
   import { getFileDiff, getFileInterdiff, getFileContent } from "../lib/api";
   import type {
     FileDiffResponse,
@@ -53,14 +54,20 @@
   let formOpen = $state(false);
 
   // Lines that have threads on them (for gutter indicators)
-  let threadLines = $derived(
-    new Set(
-      threads.flatMap((t) => {
-        const lines: number[] = [];
-        for (let i = t.line_start; i <= t.line_end; i++) lines.push(i);
-        return lines;
-      }),
-    ),
+  // Maps line number to thread status — Open wins over Resolved
+  let threadLineStatus = $derived(
+    (() => {
+      const map = new SvelteMap<number, "Open" | "Resolved">();
+      for (const t of threads) {
+        for (let i = t.line_start; i <= t.line_end; i++) {
+          const current = map.get(i);
+          if (!current || t.status === "Open") {
+            map.set(i, t.status);
+          }
+        }
+      }
+      return map;
+    })(),
   );
 
   function isLineSelected(lineNo: number | null): boolean {
@@ -313,8 +320,10 @@
         <!-- Diff lines -->
         {#each hunk.lines as line, lineIdx (lineIdx)}
           {@const commentable = line.new_line_no !== null}
-          {@const hasThread =
-            line.new_line_no !== null && threadLines.has(line.new_line_no)}
+          {@const threadStatus =
+            line.new_line_no !== null
+              ? threadLineStatus.get(line.new_line_no)
+              : undefined}
           {@const selected = isLineSelected(line.new_line_no)}
           <div
             class="group flex hover:brightness-125 transition-[filter] {selected
@@ -343,8 +352,12 @@
                 onclick={(e: MouseEvent) =>
                   handleGutterClick(line.new_line_no!, e)}
               >
-                {#if hasThread}
-                  <span class="text-accent text-xs">&bull;</span>
+                {#if threadStatus}
+                  <span
+                    class="text-xs {threadStatus === 'Open'
+                      ? 'text-status-open'
+                      : 'text-text-faint'}">&bull;</span
+                  >
                 {:else}
                   <span
                     class="text-accent text-xs opacity-0 group-hover:opacity-100 transition-opacity"
@@ -403,7 +416,7 @@
   {:else if fileContent}
     <div class="font-mono text-sm min-w-full {containerFit}">
       {#each fileContent.lines as line (line.line_no)}
-        {@const hasThread = threadLines.has(line.line_no)}
+        {@const threadStatus = threadLineStatus.get(line.line_no)}
         {@const selected = isLineSelected(line.line_no)}
         <div
           class="group flex hover:brightness-125 transition-[filter] {selected
@@ -426,8 +439,12 @@
             class="w-6 shrink-0 text-center select-none leading-6 cursor-pointer"
             onclick={(e: MouseEvent) => handleGutterClick(line.line_no, e)}
           >
-            {#if hasThread}
-              <span class="text-accent text-xs">&bull;</span>
+            {#if threadStatus}
+              <span
+                class="text-xs {threadStatus === 'Open'
+                  ? 'text-status-open'
+                  : 'text-text-faint'}">&bull;</span
+              >
             {:else}
               <span
                 class="text-accent text-xs opacity-0 group-hover:opacity-100 transition-opacity"

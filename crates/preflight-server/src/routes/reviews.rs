@@ -10,6 +10,7 @@ use crate::error::ApiError;
 use crate::state::AppState;
 use crate::types::{CreateReviewRequest, ReviewResponse, UpdateReviewStatusRequest};
 use crate::ws::{WsEvent, WsEventType};
+use preflight_core::review::{ThreadOrigin, ThreadStatus};
 use preflight_core::store::CreateReviewInput;
 
 pub fn router() -> axum::Router<AppState> {
@@ -54,6 +55,7 @@ async fn create_review(
         status: review.status,
         file_count: revision.files.len(),
         thread_count,
+        open_thread_count: 0,
         revision_count: 1,
         created_at: review.created_at,
         updated_at: review.updated_at,
@@ -86,6 +88,7 @@ async fn list_reviews(
             status: review.status,
             file_count: summary.file_count,
             thread_count: summary.thread_count,
+            open_thread_count: summary.open_thread_count,
             revision_count,
             created_at: review.created_at,
             updated_at: review.updated_at,
@@ -99,7 +102,12 @@ async fn get_review(
     Path(id): Path<Uuid>,
 ) -> Result<Json<ReviewResponse>, ApiError> {
     let review = state.store.get_review(id).await?;
-    let thread_count = state.store.get_threads(id, None).await?.len();
+    let threads = state.store.get_threads(id, None).await?;
+    let thread_count = threads.len();
+    let open_thread_count = threads
+        .iter()
+        .filter(|t| t.status == ThreadStatus::Open && t.origin != ThreadOrigin::AgentExplanation)
+        .count();
     let revisions = state.store.get_revisions(id).await?;
     let file_count = revisions.last().map(|r| r.files.len()).unwrap_or(0);
     Ok(Json(ReviewResponse {
@@ -108,6 +116,7 @@ async fn get_review(
         status: review.status,
         file_count,
         thread_count,
+        open_thread_count,
         revision_count: revisions.len(),
         created_at: review.created_at,
         updated_at: review.updated_at,
@@ -259,6 +268,7 @@ mod tests {
         assert_eq!(json["status"], "Open");
         assert_eq!(json["file_count"], 1);
         assert_eq!(json["thread_count"], 0);
+        assert_eq!(json["open_thread_count"], 0);
         assert_eq!(json["revision_count"], 1);
         assert!(json["id"].is_string());
         assert!(json["created_at"].is_string());
@@ -373,5 +383,83 @@ mod tests {
             .unwrap();
 
         assert_eq!(patch_response.status(), StatusCode::NO_CONTENT);
+    }
+
+    #[tokio::test]
+    async fn test_get_review_open_thread_count() {
+        let app = test_app().await;
+        let (_repo_dir, repo_path) = setup_test_repo();
+        let id = create_review_for_test(&app, &repo_path).await;
+
+        // Create a thread
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/api/reviews/{id}/threads"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "file_path": "src/main.rs",
+                            "line_start": 1,
+                            "line_end": 1,
+                            "origin": "Comment",
+                            "body": "test comment",
+                            "author_type": "Human"
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let thread_json = body_json(response).await;
+        let thread_id = thread_json["id"].as_str().unwrap();
+
+        // GET review — should have 1 open thread
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/reviews/{id}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let json = body_json(response).await;
+        assert_eq!(json["thread_count"], 1);
+        assert_eq!(json["open_thread_count"], 1);
+
+        // Resolve the thread
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .method("PATCH")
+                    .uri(format!("/api/threads/{thread_id}/status"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({ "status": "Resolved" }).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        // GET review — should have 0 open threads
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/reviews/{id}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let json = body_json(response).await;
+        assert_eq!(json["thread_count"], 1);
+        assert_eq!(json["open_thread_count"], 0);
     }
 }

@@ -15,6 +15,7 @@ use crate::types::{
 };
 use preflight_core::diff::{DiffLine, FileStatus, Hunk, LineKind};
 use preflight_core::file_reader;
+use preflight_core::review::{ThreadOrigin, ThreadStatus};
 
 #[derive(Debug, Deserialize)]
 struct ContentQuery {
@@ -47,6 +48,7 @@ async fn list_files(
         Some(n) => state.store.get_revision(id, n).await?,
         None => state.store.get_latest_revision(id).await?,
     };
+    let threads = state.store.get_threads(id, None).await?;
     let entries: Vec<FileListEntry> = revision
         .files
         .iter()
@@ -55,9 +57,19 @@ async fn list_files(
                 .new_path
                 .clone()
                 .unwrap_or_else(|| f.old_path.clone().unwrap_or_default());
+            let file_threads: Vec<_> = threads.iter().filter(|t| t.file_path == path).collect();
+            let thread_count = file_threads.len();
+            let open_thread_count = file_threads
+                .iter()
+                .filter(|t| {
+                    t.status == ThreadStatus::Open && t.origin != ThreadOrigin::AgentExplanation
+                })
+                .count();
             FileListEntry {
                 path,
                 status: f.status.clone(),
+                thread_count,
+                open_thread_count,
             }
         })
         .collect();
@@ -438,6 +450,8 @@ mod tests {
         assert_eq!(files.len(), 1);
         assert_eq!(files[0]["path"], "src/main.rs");
         assert_eq!(files[0]["status"], "Modified");
+        assert_eq!(files[0]["thread_count"], 0);
+        assert_eq!(files[0]["open_thread_count"], 0);
     }
 
     #[tokio::test]

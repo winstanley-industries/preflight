@@ -102,7 +102,14 @@
                   class="flex items-center gap-4 shrink-0 text-sm text-text-muted"
                 >
                   <span>{review.file_count} files</span>
-                  <span>{review.thread_count} threads</span>
+                  <span
+                    class={review.open_thread_count > 0
+                      ? "text-status-open"
+                      : ""}
+                    >{review.thread_count} threads{review.open_thread_count > 0
+                      ? ` (${review.open_thread_count} open)`
+                      : ""}</span
+                  >
                   <span class="text-text-faint"
                     >{relativeTime(review.updated_at)}</span
                   >
