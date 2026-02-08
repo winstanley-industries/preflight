@@ -139,6 +139,37 @@ impl ReviewStore for JsonFileStore {
         Ok(())
     }
 
+    async fn delete_review(&self, id: Uuid) -> Result<(), StoreError> {
+        let mut state = self.state.lock().await;
+        if state.reviews.remove(&id).is_none() {
+            return Err(StoreError::ReviewNotFound(id));
+        }
+        state.threads.retain(|_, t| t.review_id != id);
+        state.revisions.retain(|_, r| r.review_id != id);
+        self.persist(&state).await?;
+        Ok(())
+    }
+
+    async fn delete_closed_reviews(&self) -> Result<Vec<Uuid>, StoreError> {
+        let mut state = self.state.lock().await;
+        let closed_ids: Vec<Uuid> = state
+            .reviews
+            .values()
+            .filter(|r| r.status == ReviewStatus::Closed)
+            .map(|r| r.id)
+            .collect();
+        if closed_ids.is_empty() {
+            return Ok(vec![]);
+        }
+        for id in &closed_ids {
+            state.reviews.remove(id);
+            state.threads.retain(|_, t| t.review_id != *id);
+            state.revisions.retain(|_, r| r.review_id != *id);
+        }
+        self.persist(&state).await?;
+        Ok(closed_ids)
+    }
+
     async fn create_thread(&self, input: CreateThreadInput) -> Result<CommentThread, StoreError> {
         let mut state = self.state.lock().await;
         if !state.reviews.contains_key(&input.review_id) {
@@ -840,5 +871,129 @@ mod tests {
             .unwrap();
         let store = JsonFileStore::new_empty(&path).await;
         assert!(store.list_reviews().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_delete_review_removes_review_and_associated_data() {
+        use crate::review::{AuthorType, RevisionTrigger, ThreadOrigin};
+
+        let (store, _dir) = test_store().await;
+        let review = create_review_with_store(&store).await;
+
+        store
+            .create_thread(CreateThreadInput {
+                review_id: review.id,
+                file_path: "src/main.rs".into(),
+                line_start: 1,
+                line_end: 1,
+                origin: ThreadOrigin::Comment,
+                initial_comment_body: "test".into(),
+                initial_comment_author: AuthorType::Human,
+                revision_number: None,
+                content_snippet: None,
+            })
+            .await
+            .unwrap();
+        store
+            .create_revision(CreateRevisionInput {
+                review_id: review.id,
+                trigger: RevisionTrigger::Agent,
+                message: None,
+                files: vec![],
+            })
+            .await
+            .unwrap();
+
+        store.delete_review(review.id).await.unwrap();
+
+        assert!(matches!(
+            store.get_review(review.id).await,
+            Err(StoreError::ReviewNotFound(_))
+        ));
+        assert!(matches!(
+            store.get_threads(review.id, None).await,
+            Err(StoreError::ReviewNotFound(_))
+        ));
+        assert!(matches!(
+            store.get_revisions(review.id).await,
+            Err(StoreError::ReviewNotFound(_))
+        ));
+        assert!(store.list_reviews().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_delete_review_not_found() {
+        let (store, _dir) = test_store().await;
+        let result = store.delete_review(Uuid::new_v4()).await;
+        assert!(matches!(result, Err(StoreError::ReviewNotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn test_delete_review_does_not_affect_other_reviews() {
+        let (store, _dir) = test_store().await;
+        let review1 = create_review_with_store(&store).await;
+        let review2 = create_review_with_store(&store).await;
+
+        store.delete_review(review1.id).await.unwrap();
+
+        assert!(store.get_review(review2.id).await.is_ok());
+        assert_eq!(store.list_reviews().await.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_delete_closed_reviews() {
+        let (store, _dir) = test_store().await;
+        let r1 = create_review_with_store(&store).await;
+        let r2 = create_review_with_store(&store).await;
+        let r3 = create_review_with_store(&store).await;
+
+        store
+            .update_review_status(r1.id, ReviewStatus::Closed)
+            .await
+            .unwrap();
+        store
+            .update_review_status(r2.id, ReviewStatus::Closed)
+            .await
+            .unwrap();
+
+        let deleted = store.delete_closed_reviews().await.unwrap();
+        assert_eq!(deleted.len(), 2);
+        assert!(deleted.contains(&r1.id));
+        assert!(deleted.contains(&r2.id));
+
+        let remaining = store.list_reviews().await;
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].id, r3.id);
+    }
+
+    #[tokio::test]
+    async fn test_delete_closed_reviews_none_closed() {
+        let (store, _dir) = test_store().await;
+        create_review_with_store(&store).await;
+
+        let deleted = store.delete_closed_reviews().await.unwrap();
+        assert!(deleted.is_empty());
+        assert_eq!(store.list_reviews().await.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_delete_review_persists() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("state.json");
+        let review_id;
+        {
+            let store = JsonFileStore::new(&path).await.unwrap();
+            let review = create_review_with_store(&store).await;
+            review_id = review.id;
+            store.delete_review(review.id).await.unwrap();
+        }
+        {
+            let store = JsonFileStore::new(&path).await.unwrap();
+            assert!(store.list_reviews().await.is_empty());
+            assert!(matches!(
+                store.get_review(review_id).await,
+                Err(StoreError::ReviewNotFound(_))
+            ));
+        }
     }
 }
