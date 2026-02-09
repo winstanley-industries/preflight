@@ -28,7 +28,7 @@ const OPEN_THREAD: ThreadResponse = {
     { id: "c-1", author_type: "Human", body: "Looks wrong", created_at: "" },
     { id: "c-2", author_type: "Agent", body: "Will fix", created_at: "" },
   ],
-  created_at: "",
+  created_at: "2026-02-09T01:00:00Z",
   updated_at: "",
 };
 
@@ -40,6 +40,24 @@ const RESOLVED_THREAD: ThreadResponse = {
   comments: [
     { id: "c-3", author_type: "Human", body: "Explain this", created_at: "" },
   ],
+  created_at: "2026-02-09T03:00:00Z",
+};
+
+const AGENT_EXPLANATION_THREAD: ThreadResponse = {
+  ...OPEN_THREAD,
+  id: "t-3",
+  origin: "AgentExplanation",
+  line_start: 15,
+  line_end: 18,
+  comments: [
+    {
+      id: "c-4",
+      author_type: "Agent",
+      body: "This function handles auth",
+      created_at: "",
+    },
+  ],
+  created_at: "2026-02-09T02:00:00Z",
 };
 
 function renderPanel(
@@ -73,8 +91,12 @@ describe("ThreadPanel", () => {
     renderPanel([OPEN_THREAD]);
     expect(screen.getByText("Looks wrong")).toBeInTheDocument();
     expect(screen.getByText("Will fix")).toBeInTheDocument();
-    expect(screen.getByText("Comment")).toBeInTheDocument();
-    expect(screen.getByText("Open")).toBeInTheDocument();
+    // Origin badge (not the dropdown option)
+    const originBadges = screen.getAllByText("Comment");
+    expect(originBadges.length).toBeGreaterThanOrEqual(1);
+    // Status badge in thread header
+    const openBadges = screen.getAllByText("Open");
+    expect(openBadges.length).toBeGreaterThanOrEqual(1);
   });
 
   it("reply textarea submits with Cmd+Enter and calls addComment", async () => {
@@ -109,8 +131,10 @@ describe("ThreadPanel", () => {
     expect(onThreadsChanged).toHaveBeenCalled();
   });
 
-  it('"Reopen" button appears on resolved threads', () => {
+  it('"Reopen" button appears on resolved threads', async () => {
+    const user = userEvent.setup();
     renderPanel([RESOLVED_THREAD]);
+    await user.click(screen.getByRole("button", { name: /Resolved\s+1/ }));
     expect(screen.getByRole("button", { name: "Reopen" })).toBeInTheDocument();
   });
 
@@ -205,12 +229,14 @@ describe("ThreadPanel", () => {
     expect(screen.queryByText("Nudge agent")).not.toBeInTheDocument();
   });
 
-  it("does not show nudge button on resolved threads", () => {
+  it("does not show nudge button on resolved threads", async () => {
+    const user = userEvent.setup();
     const thread: ThreadResponse = {
       ...RESOLVED_THREAD,
       agent_status: null,
     };
     renderPanel([thread]);
+    await user.click(screen.getByRole("button", { name: /Resolved\s+1/ }));
     expect(screen.queryByText("Nudge agent")).not.toBeInTheDocument();
   });
 
@@ -241,5 +267,146 @@ describe("ThreadPanel", () => {
     expect(screen.queryByText("Agent has seen this")).not.toBeInTheDocument();
     expect(screen.queryByText(/working/i)).not.toBeInTheDocument();
     expect(screen.queryByText("Nudge agent")).not.toBeInTheDocument();
+  });
+
+  // --- Filtering and sorting tests ---
+
+  describe("filtering and sorting", () => {
+    const ALL_THREADS = [
+      OPEN_THREAD,
+      RESOLVED_THREAD,
+      AGENT_EXPLANATION_THREAD,
+    ];
+
+    it("defaults to Open filter with status tab counts", () => {
+      renderPanel(ALL_THREADS);
+      // Only open threads visible by default
+      expect(screen.getByText("Looks wrong")).toBeInTheDocument();
+      expect(
+        screen.getByText("This function handles auth"),
+      ).toBeInTheDocument();
+      // Resolved thread hidden
+      expect(screen.queryByText("Explain this")).not.toBeInTheDocument();
+      // Status tabs with counts
+      expect(
+        screen.getByRole("button", { name: /Open\s+2/ }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /Resolved\s+1/ }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /All\s+3/ }),
+      ).toBeInTheDocument();
+    });
+
+    it("shows all threads when clicking All tab", async () => {
+      const user = userEvent.setup();
+      renderPanel(ALL_THREADS);
+      await user.click(screen.getByRole("button", { name: /All\s+3/ }));
+      expect(screen.getByText("Looks wrong")).toBeInTheDocument();
+      expect(screen.getByText("Explain this")).toBeInTheDocument();
+      expect(
+        screen.getByText("This function handles auth"),
+      ).toBeInTheDocument();
+    });
+
+    it("filters by status when clicking Resolved tab", async () => {
+      const user = userEvent.setup();
+      renderPanel(ALL_THREADS);
+      await user.click(screen.getByRole("button", { name: /Resolved\s+1/ }));
+      // Resolved thread visible
+      expect(screen.getByText("Explain this")).toBeInTheDocument();
+      // Open threads hidden
+      expect(screen.queryByText("Looks wrong")).not.toBeInTheDocument();
+      expect(
+        screen.queryByText("This function handles auth"),
+      ).not.toBeInTheDocument();
+    });
+
+    it("filters by origin when selecting from dropdown", async () => {
+      const user = userEvent.setup();
+      renderPanel(ALL_THREADS);
+      const originSelect = screen.getByLabelText("Filter by origin");
+      await user.selectOptions(originSelect, "AgentExplanation");
+      // Only agent explanation thread visible
+      expect(
+        screen.getByText("This function handles auth"),
+      ).toBeInTheDocument();
+      expect(screen.queryByText("Looks wrong")).not.toBeInTheDocument();
+      expect(screen.queryByText("Explain this")).not.toBeInTheDocument();
+    });
+
+    it("sorts by location (default) — threads ordered by line_start", async () => {
+      const user = userEvent.setup();
+      renderPanel(ALL_THREADS);
+      // Switch to All to see all 3 threads
+      await user.click(screen.getByRole("button", { name: /All\s+3/ }));
+      const lineButtons = screen.getAllByRole("button", { name: /Lines/ });
+      // OPEN_THREAD line 5, RESOLVED_THREAD line 5, AGENT_EXPLANATION line 15
+      expect(lineButtons[0].textContent).toContain("5");
+      expect(lineButtons[1].textContent).toContain("5");
+      expect(lineButtons[2].textContent).toContain("15");
+    });
+
+    it("sorts by newest when selected", async () => {
+      const user = userEvent.setup();
+      renderPanel(ALL_THREADS);
+      // Switch to All to see all 3 threads
+      await user.click(screen.getByRole("button", { name: /All\s+3/ }));
+      const sortSelect = screen.getByLabelText("Sort threads");
+      await user.selectOptions(sortSelect, "newest");
+      const lineButtons = screen.getAllByRole("button", { name: /Lines/ });
+      // RESOLVED (03:00) line 5, AGENT_EXPLANATION (02:00) line 15, OPEN (01:00) line 5
+      expect(lineButtons[0].textContent).toMatch(/5/);
+      expect(lineButtons[1].textContent).toMatch(/15/);
+      expect(lineButtons[2].textContent).toMatch(/5/);
+    });
+
+    it("sorts by oldest when selected", async () => {
+      const user = userEvent.setup();
+      renderPanel(ALL_THREADS);
+      // Switch to All to see all 3 threads
+      await user.click(screen.getByRole("button", { name: /All\s+3/ }));
+      const sortSelect = screen.getByLabelText("Sort threads");
+      await user.selectOptions(sortSelect, "oldest");
+      const lineButtons = screen.getAllByRole("button", { name: /Lines/ });
+      // OPEN (01:00) line 5, AGENT_EXPLANATION (02:00) line 15, RESOLVED (03:00) line 5
+      expect(lineButtons[0].textContent).toMatch(/5/);
+      expect(lineButtons[1].textContent).toMatch(/15/);
+      expect(lineButtons[2].textContent).toMatch(/5/);
+    });
+
+    it("combines status and origin filters", async () => {
+      const user = userEvent.setup();
+      renderPanel(ALL_THREADS);
+      // Filter to Open + AgentExplanation
+      await user.click(screen.getByRole("button", { name: /Open\s+2/ }));
+      const originSelect = screen.getByLabelText("Filter by origin");
+      await user.selectOptions(originSelect, "AgentExplanation");
+      // Only the open AgentExplanation thread
+      expect(
+        screen.getByText("This function handles auth"),
+      ).toBeInTheDocument();
+      expect(screen.queryByText("Looks wrong")).not.toBeInTheDocument();
+      expect(screen.queryByText("Explain this")).not.toBeInTheDocument();
+    });
+
+    it("shows 'No matching threads.' when filters exclude everything", async () => {
+      const user = userEvent.setup();
+      renderPanel(ALL_THREADS);
+      // Filter to Resolved + AgentExplanation (no threads match)
+      await user.click(screen.getByRole("button", { name: /Resolved\s+1/ }));
+      const originSelect = screen.getByLabelText("Filter by origin");
+      await user.selectOptions(originSelect, "AgentExplanation");
+      expect(screen.getByText("No matching threads.")).toBeInTheDocument();
+    });
+
+    it("filter bar is not rendered when there are no threads", () => {
+      renderPanel([]);
+      expect(
+        screen.queryByLabelText("Filter by origin"),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByLabelText("Sort threads")).not.toBeInTheDocument();
+    });
   });
 });
