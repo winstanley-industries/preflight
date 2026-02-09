@@ -68,6 +68,7 @@ function renderPanel(
     props: {
       threads,
       highlightThreadId: null,
+      visibleLine: null,
       diffLines: new Set([5, 6, 7, 8]),
       onThreadsChanged: vi.fn(),
       onNavigateToThread: vi.fn(),
@@ -407,6 +408,112 @@ describe("ThreadPanel", () => {
         screen.queryByLabelText("Filter by origin"),
       ).not.toBeInTheDocument();
       expect(screen.queryByLabelText("Sort threads")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("scroll sync with diff", () => {
+    const THREAD_AT_10: ThreadResponse = {
+      ...OPEN_THREAD,
+      id: "t-10",
+      line_start: 10,
+      line_end: 12,
+    };
+    const THREAD_AT_30: ThreadResponse = {
+      ...OPEN_THREAD,
+      id: "t-30",
+      line_start: 30,
+      line_end: 35,
+    };
+    const THREAD_AT_50: ThreadResponse = {
+      ...OPEN_THREAD,
+      id: "t-50",
+      line_start: 50,
+      line_end: 55,
+    };
+
+    const allLines = new Set(Array.from({ length: 100 }, (_, i) => i + 1));
+
+    it("scrolls to first matching thread when visibleLine changes (location sort)", async () => {
+      const mockScroll = vi.fn();
+      const { rerender } = renderPanel(
+        [THREAD_AT_10, THREAD_AT_30, THREAD_AT_50],
+        { diffLines: allLines },
+      );
+
+      // Mock scrollIntoView on thread elements before triggering sync
+      for (const id of ["t-10", "t-30", "t-50"]) {
+        const el = document.getElementById(`thread-${id}`);
+        if (el) el.scrollIntoView = mockScroll;
+      }
+
+      // Set visibleLine to 25 — should sync to THREAD_AT_30 (line_end 35 >= 25)
+      await rerender({
+        threads: [THREAD_AT_10, THREAD_AT_30, THREAD_AT_50],
+        highlightThreadId: null,
+        visibleLine: 25,
+        diffLines: allLines,
+        onThreadsChanged: vi.fn(),
+        onNavigateToThread: vi.fn(),
+      });
+
+      await new Promise((r) => requestAnimationFrame(r));
+      expect(mockScroll).toHaveBeenCalledWith({
+        behavior: "smooth",
+        block: "nearest",
+      });
+    });
+
+    it("does not scroll-sync when visibleLine is null", async () => {
+      const mockScroll = vi.fn();
+      const { rerender } = renderPanel(
+        [THREAD_AT_10, THREAD_AT_30, THREAD_AT_50],
+        { diffLines: allLines },
+      );
+
+      for (const id of ["t-10", "t-30", "t-50"]) {
+        const el = document.getElementById(`thread-${id}`);
+        if (el) el.scrollIntoView = mockScroll;
+      }
+
+      // Rerender with visibleLine still null
+      await rerender({
+        threads: [THREAD_AT_10, THREAD_AT_30, THREAD_AT_50],
+        highlightThreadId: null,
+        visibleLine: null,
+        diffLines: allLines,
+        onThreadsChanged: vi.fn(),
+        onNavigateToThread: vi.fn(),
+      });
+
+      await new Promise((r) => requestAnimationFrame(r));
+      expect(mockScroll).not.toHaveBeenCalled();
+    });
+
+    it("falls back to last thread when visibleLine is past all threads", async () => {
+      const mockScroll = vi.fn();
+      const { rerender } = renderPanel(
+        [THREAD_AT_10, THREAD_AT_30, THREAD_AT_50],
+        { diffLines: allLines },
+      );
+
+      // Mock only the last thread's scrollIntoView
+      const lastEl = document.getElementById("thread-t-50");
+      if (lastEl) lastEl.scrollIntoView = mockScroll;
+
+      await rerender({
+        threads: [THREAD_AT_10, THREAD_AT_30, THREAD_AT_50],
+        highlightThreadId: null,
+        visibleLine: 80,
+        diffLines: allLines,
+        onThreadsChanged: vi.fn(),
+        onNavigateToThread: vi.fn(),
+      });
+
+      await new Promise((r) => requestAnimationFrame(r));
+      expect(mockScroll).toHaveBeenCalledWith({
+        behavior: "smooth",
+        block: "nearest",
+      });
     });
   });
 });
