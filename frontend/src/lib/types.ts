@@ -12,6 +12,7 @@ export type ThreadOrigin =
   | "ExplanationRequest"
   | "AgentExplanation";
 export type ThreadStatus = "Open" | "Resolved";
+export type AgentStatus = "Seen" | "Working";
 export type AuthorType = "Human" | "Agent";
 export type LineKind = "Context" | "Added" | "Removed";
 export type RevisionTrigger = "Agent" | "Manual";
@@ -91,6 +92,7 @@ export interface ThreadResponse {
   line_end: number;
   origin: ThreadOrigin;
   status: ThreadStatus;
+  agent_status: AgentStatus | null;
   comments: CommentResponse[];
   created_at: string;
   updated_at: string;
@@ -147,7 +149,9 @@ export type WsEventType =
   | "revision_created"
   | "thread_created"
   | "comment_added"
-  | "thread_status_changed";
+  | "thread_status_changed"
+  | "thread_acknowledged"
+  | "thread_poked";
 
 export interface WsEvent {
   event_type: WsEventType;

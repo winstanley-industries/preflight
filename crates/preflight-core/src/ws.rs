@@ -19,4 +19,6 @@ pub enum WsEventType {
     ThreadCreated,
     CommentAdded,
     ThreadStatusChanged,
+    ThreadAcknowledged,
+    ThreadPoked,
 }

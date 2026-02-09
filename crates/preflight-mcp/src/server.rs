@@ -111,13 +111,21 @@ pub struct ResolveThreadInput {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct AcknowledgeThreadInput {
+    #[schemars(description = "UUID of the comment thread")]
+    pub thread_id: String,
+    #[schemars(description = "Agent status: 'seen' or 'working'")]
+    pub status: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct WaitForEventInput {
     #[schemars(
         description = "Optional review UUID to filter events. If omitted, matches events from any review."
     )]
     pub review_id: Option<String>,
     #[schemars(
-        description = "Optional list of event types to filter. Valid values: review_created, review_status_changed, revision_created, thread_created, comment_added, thread_status_changed. If omitted, matches any event type."
+        description = "Optional list of event types to filter. Valid values: review_created, review_status_changed, revision_created, thread_created, comment_added, thread_status_changed, thread_acknowledged, thread_poked. If omitted, matches any event type."
     )]
     pub event_types: Option<Vec<String>>,
     #[schemars(description = "Timeout in seconds. Defaults to 300 (5 minutes). Max 600.")]
@@ -137,6 +145,8 @@ fn event_type_matches(event_type: &WsEventType, filter: &str) -> bool {
         "thread_created" => matches!(event_type, WsEventType::ThreadCreated),
         "comment_added" => matches!(event_type, WsEventType::CommentAdded),
         "thread_status_changed" => matches!(event_type, WsEventType::ThreadStatusChanged),
+        "thread_acknowledged" => matches!(event_type, WsEventType::ThreadAcknowledged),
+        "thread_poked" => matches!(event_type, WsEventType::ThreadPoked),
         _ => false,
     }
 }
@@ -370,6 +380,39 @@ impl PreflightMcp {
     }
 
     #[tool(
+        description = "Acknowledge a comment thread to signal that the agent has seen it or is working on it. Use 'seen' when you first read a comment, 'working' when you begin acting on it."
+    )]
+    async fn acknowledge_thread(
+        &self,
+        Parameters(input): Parameters<AcknowledgeThreadInput>,
+    ) -> Result<String, String> {
+        let status = match input.status.to_lowercase().as_str() {
+            "seen" => "Seen",
+            "working" => "Working",
+            _ => {
+                return Err(format!(
+                    "Invalid status '{}': must be 'seen' or 'working'",
+                    input.status
+                ));
+            }
+        };
+        let body = serde_json::json!({ "status": status });
+
+        self.client
+            .put(
+                &format!("/api/threads/{}/agent-status", input.thread_id),
+                &body,
+            )
+            .await
+            .map_err(format_error)?;
+
+        Ok(format!(
+            "Thread {} marked as {}",
+            input.thread_id, input.status
+        ))
+    }
+
+    #[tool(
         description = "Wait for a real-time event (new comment, thread created, etc). Blocks until a matching event arrives or timeout. Use this from a background task to monitor a review for activity."
     )]
     async fn wait_for_event(
@@ -450,6 +493,7 @@ impl ServerHandler for PreflightMcp {
                  Core loop: list_reviews → get_review → get_diff → get_comments → respond_to_comment\n\n\
                  Agent actions: create_review (start a review), create_thread (comment on code or explain it \
                  with origin 'AgentExplanation'), submit_revision (after making changes)\n\n\
+                 Activity: acknowledge_thread to signal 'seen' or 'working' on a thread\n\n\
                  Lifecycle: update_review_status (open/close), resolve_thread (resolve/reopen)\n\n\
                  Notifications: Use wait_for_event from a background task to monitor for new comments, \
                  threads, or status changes. It blocks until a matching event arrives or times out."
@@ -590,5 +634,61 @@ mod tests {
 
         let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
         assert_eq!(parsed["event_type"], "thread_created");
+    }
+
+    #[tokio::test]
+    async fn wait_for_event_matches_thread_acknowledged() {
+        let mcp = test_mcp();
+        let ws_tx = mcp.ws_tx.clone();
+
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            let _ = ws_tx.send(WsEvent {
+                event_type: WsEventType::ThreadAcknowledged,
+                review_id: "r1".to_string(),
+                payload: serde_json::json!({"thread_id": "t1", "agent_status": "Seen"}),
+                timestamp: chrono::Utc::now(),
+            });
+        });
+
+        let result = mcp
+            .wait_for_event(Parameters(WaitForEventInput {
+                review_id: None,
+                event_types: Some(vec!["thread_acknowledged".to_string()]),
+                timeout_secs: Some(5),
+            }))
+            .await
+            .unwrap();
+
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["event_type"], "thread_acknowledged");
+    }
+
+    #[tokio::test]
+    async fn wait_for_event_matches_thread_poked() {
+        let mcp = test_mcp();
+        let ws_tx = mcp.ws_tx.clone();
+
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            let _ = ws_tx.send(WsEvent {
+                event_type: WsEventType::ThreadPoked,
+                review_id: "r1".to_string(),
+                payload: serde_json::json!({"thread_id": "t1", "review_id": "r1"}),
+                timestamp: chrono::Utc::now(),
+            });
+        });
+
+        let result = mcp
+            .wait_for_event(Parameters(WaitForEventInput {
+                review_id: None,
+                event_types: Some(vec!["thread_poked".to_string()]),
+                timeout_secs: Some(5),
+            }))
+            .await
+            .unwrap();
+
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["event_type"], "thread_poked");
     }
 }

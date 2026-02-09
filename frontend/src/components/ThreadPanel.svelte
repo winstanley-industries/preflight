@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { addComment, updateThreadStatus } from "../lib/api";
+  import { addComment, updateThreadStatus, pokeThread } from "../lib/api";
   import type { ThreadResponse, ThreadOrigin } from "../lib/types";
   import { renderMarkdown } from "../lib/markdown";
 
@@ -30,6 +30,23 @@
 
   let replyTexts = $state<Record<string, string>>({});
   let submitting = $state<Record<string, boolean>>({});
+  let poking = $state<Record<string, boolean>>({});
+
+  function lastCommentIsHuman(thread: ThreadResponse): boolean {
+    const last = thread.comments[thread.comments.length - 1];
+    return last?.author_type === "Human";
+  }
+
+  async function handlePoke(threadId: string) {
+    poking[threadId] = true;
+    try {
+      await pokeThread(threadId);
+    } finally {
+      setTimeout(() => {
+        poking[threadId] = false;
+      }, 2000);
+    }
+  }
 
   const originLabel: Record<ThreadOrigin, string> = {
     Comment: "Comment",
@@ -108,6 +125,48 @@
               </span>
             </div>
           </div>
+
+          <!-- Agent activity status -->
+          {#if thread.agent_status === "Seen"}
+            <div class="flex items-center gap-1.5 text-xs text-text-faint mb-2">
+              <svg
+                class="w-3.5 h-3.5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+              Agent has seen this
+            </div>
+          {:else if thread.agent_status === "Working"}
+            <div class="flex items-center gap-1.5 text-xs text-accent mb-2">
+              <svg
+                class="w-3.5 h-3.5 animate-spin"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path
+                  d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"
+                />
+              </svg>
+              Agent is working on this&hellip;
+            </div>
+          {:else if thread.status === "Open" && lastCommentIsHuman(thread)}
+            <div class="mb-2">
+              <button
+                class="text-xs px-2 py-0.5 rounded border border-border text-text-faint hover:text-text hover:bg-bg-hover transition-colors cursor-pointer disabled:opacity-50"
+                disabled={poking[thread.id]}
+                onclick={() => handlePoke(thread.id)}
+              >
+                {poking[thread.id] ? "Nudged!" : "Nudge agent"}
+              </button>
+            </div>
+          {/if}
 
           <!-- Comments -->
           <div class="space-y-2">

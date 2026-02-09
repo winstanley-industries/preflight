@@ -7,11 +7,13 @@ import ThreadPanel from "../ThreadPanel.svelte";
 vi.mock("../../lib/api", () => ({
   addComment: vi.fn(),
   updateThreadStatus: vi.fn(),
+  pokeThread: vi.fn(),
 }));
 
-import { addComment, updateThreadStatus } from "../../lib/api";
+import { addComment, updateThreadStatus, pokeThread } from "../../lib/api";
 const mockAddComment = vi.mocked(addComment);
 const mockUpdateThreadStatus = vi.mocked(updateThreadStatus);
+const mockPokeThread = vi.mocked(pokeThread);
 
 const OPEN_THREAD: ThreadResponse = {
   id: "t-1",
@@ -21,6 +23,7 @@ const OPEN_THREAD: ThreadResponse = {
   line_end: 8,
   origin: "Comment",
   status: "Open",
+  agent_status: null,
   comments: [
     { id: "c-1", author_type: "Human", body: "Looks wrong", created_at: "" },
     { id: "c-2", author_type: "Agent", body: "Will fix", created_at: "" },
@@ -148,5 +151,95 @@ describe("ThreadPanel", () => {
     renderPanel([outsideThread]);
     const button = screen.getByRole("button", { name: /Lines 20/ });
     expect(button.title).toBe("Opens full file view");
+  });
+
+  // --- Agent activity indicator tests ---
+
+  it('shows "Agent has seen this" when agent_status is Seen', () => {
+    const thread: ThreadResponse = {
+      ...OPEN_THREAD,
+      agent_status: "Seen",
+    };
+    renderPanel([thread]);
+    expect(screen.getByText("Agent has seen this")).toBeInTheDocument();
+    expect(screen.queryByText(/working/i)).not.toBeInTheDocument();
+    expect(screen.queryByText("Nudge agent")).not.toBeInTheDocument();
+  });
+
+  it('shows "Agent is working on this" with spinner when agent_status is Working', () => {
+    const thread: ThreadResponse = {
+      ...OPEN_THREAD,
+      agent_status: "Working",
+    };
+    const { container } = renderPanel([thread]);
+    // The text contains &hellip; which renders as "…"
+    const indicator = container.querySelector(".animate-spin")?.parentElement;
+    expect(indicator).toBeTruthy();
+    expect(indicator!.textContent).toContain("Agent is working on this");
+    expect(screen.queryByText("Agent has seen this")).not.toBeInTheDocument();
+    expect(screen.queryByText("Nudge agent")).not.toBeInTheDocument();
+  });
+
+  it('shows "Nudge agent" button when no agent_status, thread is open, last comment is human', () => {
+    const thread: ThreadResponse = {
+      ...OPEN_THREAD,
+      agent_status: null,
+      comments: [
+        {
+          id: "c-1",
+          author_type: "Human",
+          body: "Please fix this",
+          created_at: "",
+        },
+      ],
+    };
+    renderPanel([thread]);
+    expect(
+      screen.getByRole("button", { name: "Nudge agent" }),
+    ).toBeInTheDocument();
+  });
+
+  it("does not show nudge button when last comment is from agent", () => {
+    // OPEN_THREAD has last comment from Agent
+    renderPanel([OPEN_THREAD]);
+    expect(screen.queryByText("Nudge agent")).not.toBeInTheDocument();
+  });
+
+  it("does not show nudge button on resolved threads", () => {
+    const thread: ThreadResponse = {
+      ...RESOLVED_THREAD,
+      agent_status: null,
+    };
+    renderPanel([thread]);
+    expect(screen.queryByText("Nudge agent")).not.toBeInTheDocument();
+  });
+
+  it("nudge button calls pokeThread and shows feedback", async () => {
+    const user = userEvent.setup();
+    mockPokeThread.mockResolvedValueOnce(undefined);
+    const thread: ThreadResponse = {
+      ...OPEN_THREAD,
+      agent_status: null,
+      comments: [
+        {
+          id: "c-1",
+          author_type: "Human",
+          body: "Hello?",
+          created_at: "",
+        },
+      ],
+    };
+    renderPanel([thread]);
+    await user.click(screen.getByRole("button", { name: "Nudge agent" }));
+    expect(mockPokeThread).toHaveBeenCalledWith("t-1");
+    expect(screen.getByText("Nudged!")).toBeInTheDocument();
+  });
+
+  it("shows no agent indicator when agent_status is null and conditions for nudge are not met", () => {
+    // OPEN_THREAD: agent_status null, last comment is Agent → no indicator shown
+    renderPanel([OPEN_THREAD]);
+    expect(screen.queryByText("Agent has seen this")).not.toBeInTheDocument();
+    expect(screen.queryByText(/working/i)).not.toBeInTheDocument();
+    expect(screen.queryByText("Nudge agent")).not.toBeInTheDocument();
   });
 });

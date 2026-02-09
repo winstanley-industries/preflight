@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use preflight_core::diff::{FileStatus, Hunk};
-use preflight_core::review::{AuthorType, ReviewStatus, ThreadOrigin, ThreadStatus};
+use preflight_core::review::{AgentStatus, AuthorType, ReviewStatus, ThreadOrigin, ThreadStatus};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -37,6 +37,11 @@ pub struct UpdateReviewStatusRequest {
 #[derive(Debug, Deserialize)]
 pub struct UpdateThreadStatusRequest {
     pub status: ThreadStatus,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateAgentStatusRequest {
+    pub status: AgentStatus,
 }
 
 #[derive(Debug, Deserialize)]
@@ -124,6 +129,8 @@ pub struct ThreadResponse {
     pub line_end: u32,
     pub origin: ThreadOrigin,
     pub status: ThreadStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_status: Option<AgentStatus>,
     pub comments: Vec<CommentResponse>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,

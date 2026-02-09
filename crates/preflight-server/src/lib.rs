@@ -25,6 +25,7 @@ pub fn app(store: Arc<dyn ReviewStore>) -> Router {
         store,
         highlighter: Arc::new(preflight_core::highlight::Highlighter::new()),
         ws_tx,
+        agent_status: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
     };
     Router::new()
         .route("/api/health", get(health))

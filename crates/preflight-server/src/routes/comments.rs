@@ -29,6 +29,10 @@ async fn add_comment(
             body: request.body,
         })
         .await?;
+    // Reset agent status on any new comment:
+    // - Human comment means agent needs to re-acknowledge
+    // - Agent comment means agent finished working
+    state.agent_status.lock().await.remove(&id);
     let response = CommentResponse {
         id: comment.id,
         author_type: comment.author_type,
@@ -202,6 +206,118 @@ mod tests {
         assert_eq!(json["author_type"], "Agent");
         assert!(json["id"].is_string());
         assert!(json["created_at"].is_string());
+    }
+
+    #[tokio::test]
+    async fn test_human_comment_resets_agent_status() {
+        let app = test_app().await;
+        let review_id = create_review(&app).await;
+        let thread_id = create_thread(&app, &review_id).await;
+
+        // Set agent status to Working
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri(format!("/api/threads/{thread_id}/agent-status"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({ "status": "Working" }).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        // Add a human comment
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/api/threads/{thread_id}/comments"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "author_type": "Human",
+                            "body": "Another question"
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        // Check agent_status is now null
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/reviews/{review_id}/threads"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let json = body_json(response).await;
+        let threads = json.as_array().unwrap();
+        assert!(threads[0]["agent_status"].is_null());
+    }
+
+    #[tokio::test]
+    async fn test_agent_comment_clears_agent_status() {
+        let app = test_app().await;
+        let review_id = create_review(&app).await;
+        let thread_id = create_thread(&app, &review_id).await;
+
+        // Set agent status to Working
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri(format!("/api/threads/{thread_id}/agent-status"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({ "status": "Working" }).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        // Add an agent comment (should reset — agent finished working)
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/api/threads/{thread_id}/comments"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "author_type": "Agent",
+                            "body": "Here's my response"
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        // Check agent_status is cleared
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/reviews/{review_id}/threads"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let json = body_json(response).await;
+        let threads = json.as_array().unwrap();
+        assert!(threads[0]["agent_status"].is_null());
     }
 
     #[tokio::test]
