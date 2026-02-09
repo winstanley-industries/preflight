@@ -1,27 +1,89 @@
 use preflight_mcp::client::PreflightClient;
+use std::sync::Arc;
+use tokio::net::TcpListener;
 
-/// These tests require a running preflight server.
-/// They're ignored by default and run manually or in CI with a server up.
+/// Spin up an ephemeral preflight server and return its port.
+async fn start_server() -> u16 {
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("state.json");
+    let store = preflight_core::json_store::JsonFileStore::new(&path)
+        .await
+        .unwrap();
+    Box::leak(Box::new(dir));
 
-fn get_test_port() -> u16 {
-    std::env::var("PREFLIGHT_TEST_PORT")
-        .ok()
-        .and_then(|p| p.parse().ok())
-        .unwrap_or(3000)
+    let app = preflight_server::app(Arc::new(store));
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+
+    tokio::spawn(async move {
+        axum::serve(listener, app.into_make_service())
+            .await
+            .unwrap();
+    });
+
+    port
+}
+
+/// Create a temp git repo with one committed file and a working-tree change.
+fn setup_test_repo() -> String {
+    use std::process::Command;
+
+    let dir = tempfile::TempDir::new().unwrap();
+    let p = dir.path().to_owned();
+
+    Command::new("git")
+        .args(["init"])
+        .current_dir(&p)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["config", "user.email", "t@t.com"])
+        .current_dir(&p)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["config", "user.name", "T"])
+        .current_dir(&p)
+        .output()
+        .unwrap();
+
+    std::fs::create_dir_all(p.join("src")).unwrap();
+    std::fs::write(p.join("src/main.rs"), "fn main() {}\n").unwrap();
+    Command::new("git")
+        .args(["add", "."])
+        .current_dir(&p)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "init"])
+        .current_dir(&p)
+        .output()
+        .unwrap();
+
+    std::fs::write(
+        p.join("src/main.rs"),
+        "use std::io;\n\nfn main() {\n    println!(\"hello\");\n}\n",
+    )
+    .unwrap();
+
+    let repo_path = p.to_str().unwrap().to_string();
+    Box::leak(Box::new(dir));
+    repo_path
 }
 
 #[tokio::test]
-#[ignore = "requires running preflight server"]
 async fn test_list_reviews() {
-    let client = PreflightClient::new(get_test_port());
+    let port = start_server().await;
+    let client = PreflightClient::new(port);
     let reviews: serde_json::Value = client.get("/api/reviews").await.unwrap();
     assert!(reviews.is_array());
 }
 
 #[tokio::test]
-#[ignore = "requires running preflight server"]
 async fn test_full_review_flow() {
-    let client = PreflightClient::new(get_test_port());
+    let port = start_server().await;
+    let client = PreflightClient::new(port);
+    let repo_path = setup_test_repo();
 
     // Create a review
     let review: serde_json::Value = client
@@ -29,7 +91,8 @@ async fn test_full_review_flow() {
             "/api/reviews",
             &serde_json::json!({
                 "title": "MCP integration test",
-                "diff": "diff --git a/test.rs b/test.rs\nindex abc..def 100644\n--- a/test.rs\n+++ b/test.rs\n@@ -1,3 +1,4 @@\n fn main() {\n+    println!(\"hello\");\n }\n"
+                "repo_path": repo_path,
+                "base_ref": "HEAD"
             }),
         )
         .await
@@ -99,9 +162,10 @@ async fn test_full_review_flow() {
 }
 
 #[tokio::test]
-#[ignore = "requires running preflight server"]
 async fn test_patch_method() {
-    let client = PreflightClient::new(get_test_port());
+    let port = start_server().await;
+    let client = PreflightClient::new(port);
+    let repo_path = setup_test_repo();
 
     // Create a review first
     let review: serde_json::Value = client
@@ -109,7 +173,7 @@ async fn test_patch_method() {
             "/api/reviews",
             &serde_json::json!({
                 "title": "Patch test",
-                "repo_path": "/tmp",
+                "repo_path": repo_path,
                 "base_ref": "HEAD"
             }),
         )
@@ -118,14 +182,20 @@ async fn test_patch_method() {
     let review_id = review["id"].as_str().unwrap();
 
     // Patch its status
-    let result: Result<(), _> = client
+    client
         .patch(
             &format!("/api/reviews/{review_id}/status"),
             &serde_json::json!({ "status": "Closed" }),
         )
-        .await;
-    // Should not fail to compile or panic
-    assert!(result.is_ok() || result.is_err());
+        .await
+        .unwrap();
+
+    // Verify it's closed
+    let fetched: serde_json::Value = client
+        .get(&format!("/api/reviews/{review_id}"))
+        .await
+        .unwrap();
+    assert_eq!(fetched["status"].as_str().unwrap(), "Closed");
 }
 
 #[tokio::test]
