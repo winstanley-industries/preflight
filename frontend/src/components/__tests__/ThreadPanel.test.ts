@@ -131,8 +131,10 @@ describe("ThreadPanel", () => {
     expect(onThreadsChanged).toHaveBeenCalled();
   });
 
-  it('"Reopen" button appears on resolved threads', () => {
+  it('"Reopen" button appears on resolved threads', async () => {
+    const user = userEvent.setup();
     renderPanel([RESOLVED_THREAD]);
+    await user.click(screen.getByRole("button", { name: /Resolved\s+1/ }));
     expect(screen.getByRole("button", { name: "Reopen" })).toBeInTheDocument();
   });
 
@@ -227,12 +229,14 @@ describe("ThreadPanel", () => {
     expect(screen.queryByText("Nudge agent")).not.toBeInTheDocument();
   });
 
-  it("does not show nudge button on resolved threads", () => {
+  it("does not show nudge button on resolved threads", async () => {
+    const user = userEvent.setup();
     const thread: ThreadResponse = {
       ...RESOLVED_THREAD,
       agent_status: null,
     };
     renderPanel([thread]);
+    await user.click(screen.getByRole("button", { name: /Resolved\s+1/ }));
     expect(screen.queryByText("Nudge agent")).not.toBeInTheDocument();
   });
 
@@ -274,37 +278,36 @@ describe("ThreadPanel", () => {
       AGENT_EXPLANATION_THREAD,
     ];
 
-    it("shows all threads by default with status tab counts", () => {
+    it("defaults to Open filter with status tab counts", () => {
       renderPanel(ALL_THREADS);
-      // All 3 threads visible
-      expect(screen.getByText("Looks wrong")).toBeInTheDocument();
-      expect(screen.getByText("Explain this")).toBeInTheDocument();
-      expect(
-        screen.getByText("This function handles auth"),
-      ).toBeInTheDocument();
-      // Status tabs with counts
-      expect(
-        screen.getByRole("button", { name: /All\s+3/ }),
-      ).toBeInTheDocument();
-      expect(
-        screen.getByRole("button", { name: /Open\s+2/ }),
-      ).toBeInTheDocument();
-      expect(
-        screen.getByRole("button", { name: /Resolved\s+1/ }),
-      ).toBeInTheDocument();
-    });
-
-    it("filters by status when clicking Open tab", async () => {
-      const user = userEvent.setup();
-      renderPanel(ALL_THREADS);
-      await user.click(screen.getByRole("button", { name: /Open\s+2/ }));
-      // Open threads visible
+      // Only open threads visible by default
       expect(screen.getByText("Looks wrong")).toBeInTheDocument();
       expect(
         screen.getByText("This function handles auth"),
       ).toBeInTheDocument();
       // Resolved thread hidden
       expect(screen.queryByText("Explain this")).not.toBeInTheDocument();
+      // Status tabs with counts
+      expect(
+        screen.getByRole("button", { name: /Open\s+2/ }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /Resolved\s+1/ }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /All\s+3/ }),
+      ).toBeInTheDocument();
+    });
+
+    it("shows all threads when clicking All tab", async () => {
+      const user = userEvent.setup();
+      renderPanel(ALL_THREADS);
+      await user.click(screen.getByRole("button", { name: /All\s+3/ }));
+      expect(screen.getByText("Looks wrong")).toBeInTheDocument();
+      expect(screen.getByText("Explain this")).toBeInTheDocument();
+      expect(
+        screen.getByText("This function handles auth"),
+      ).toBeInTheDocument();
     });
 
     it("filters by status when clicking Resolved tab", async () => {
@@ -333,8 +336,11 @@ describe("ThreadPanel", () => {
       expect(screen.queryByText("Explain this")).not.toBeInTheDocument();
     });
 
-    it("sorts by location (default) — threads ordered by line_start", () => {
+    it("sorts by location (default) — threads ordered by line_start", async () => {
+      const user = userEvent.setup();
       renderPanel(ALL_THREADS);
+      // Switch to All to see all 3 threads
+      await user.click(screen.getByRole("button", { name: /All\s+3/ }));
       const lineButtons = screen.getAllByRole("button", { name: /Lines/ });
       // OPEN_THREAD line 5, RESOLVED_THREAD line 5, AGENT_EXPLANATION line 15
       expect(lineButtons[0].textContent).toContain("5");
@@ -345,6 +351,8 @@ describe("ThreadPanel", () => {
     it("sorts by newest when selected", async () => {
       const user = userEvent.setup();
       renderPanel(ALL_THREADS);
+      // Switch to All to see all 3 threads
+      await user.click(screen.getByRole("button", { name: /All\s+3/ }));
       const sortSelect = screen.getByLabelText("Sort threads");
       await user.selectOptions(sortSelect, "newest");
       const lineButtons = screen.getAllByRole("button", { name: /Lines/ });
@@ -357,6 +365,8 @@ describe("ThreadPanel", () => {
     it("sorts by oldest when selected", async () => {
       const user = userEvent.setup();
       renderPanel(ALL_THREADS);
+      // Switch to All to see all 3 threads
+      await user.click(screen.getByRole("button", { name: /All\s+3/ }));
       const sortSelect = screen.getByLabelText("Sort threads");
       await user.selectOptions(sortSelect, "oldest");
       const lineButtons = screen.getAllByRole("button", { name: /Lines/ });

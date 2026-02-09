@@ -23,7 +23,7 @@
     onNavigateToThread,
   }: Props = $props();
 
-  let statusFilter = $state<StatusFilter>("All");
+  let statusFilter = $state<StatusFilter>("Open");
   let originFilter = $state<OriginFilter>("All");
   let sortField = $state<SortField>("location");
 
@@ -137,7 +137,7 @@
     <!-- Filter bar -->
     <div class="px-4 pb-2 space-y-1.5">
       <div class="flex items-center gap-1 text-xs">
-        {#each ["All", "Open", "Resolved"] as status (status)}
+        {#each ["Open", "Resolved", "All"] as status (status)}
           <button
             class="px-2 py-0.5 rounded transition-colors cursor-pointer {statusFilter ===
             status
