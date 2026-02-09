@@ -48,7 +48,7 @@ describe("InlineCommentForm", () => {
       screen.getByRole("button", { name: "Request Explanation" }),
     );
     expect(
-      screen.getByPlaceholderText("What should be explained?"),
+      screen.getByPlaceholderText("What should be explained? (optional)"),
     ).toBeInTheDocument();
   });
 
@@ -94,10 +94,54 @@ describe("InlineCommentForm", () => {
     expect(onSubmit).toHaveBeenCalledWith("thread-42");
   });
 
-  it("submit is disabled when body is empty", () => {
+  it("submit is disabled when body is empty for Comment origin", () => {
     renderForm();
     const submitBtn = screen.getByRole("button", { name: "Submit" });
     expect(submitBtn).toBeDisabled();
+  });
+
+  it("submit is enabled when body is empty for ExplanationRequest origin", async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await user.click(
+      screen.getByRole("button", { name: "Request Explanation" }),
+    );
+    const submitBtn = screen.getByRole("button", { name: "Submit" });
+    expect(submitBtn).toBeEnabled();
+  });
+
+  it("submits ExplanationRequest with empty body", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    mockCreateThread.mockResolvedValueOnce({
+      id: "thread-explain",
+      review_id: "rev-1",
+      file_path: "src/main.ts",
+      line_start: 5,
+      line_end: 5,
+      origin: "ExplanationRequest",
+      status: "Open",
+      agent_status: null,
+      comments: [],
+      created_at: "",
+      updated_at: "",
+    });
+
+    renderForm({ onSubmit });
+    await user.click(
+      screen.getByRole("button", { name: "Request Explanation" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Submit" }));
+
+    expect(mockCreateThread).toHaveBeenCalledWith("rev-1", {
+      file_path: "src/main.ts",
+      line_start: 5,
+      line_end: 5,
+      origin: "ExplanationRequest",
+      body: "",
+      author_type: "Human",
+    });
+    expect(onSubmit).toHaveBeenCalledWith("thread-explain");
   });
 
   it("cancel button fires onCancel", async () => {

@@ -29,8 +29,12 @@
 
   const placeholder = $derived(
     origin === "ExplanationRequest"
-      ? "What should be explained?"
+      ? "What should be explained? (optional)"
       : "Add a comment...",
+  );
+
+  const canSubmit = $derived(
+    !submitting && (origin === "ExplanationRequest" || !!body.trim()),
   );
 
   $effect(() => {
@@ -39,7 +43,7 @@
 
   async function submit() {
     const trimmed = body.trim();
-    if (!trimmed || submitting) return;
+    if (!canSubmit) return;
     submitting = true;
     error = null;
     try {
@@ -106,7 +110,7 @@
     <div class="flex items-center gap-2 mt-1.5">
       <button
         class="text-sm px-3 py-1 bg-accent text-bg rounded font-medium cursor-pointer transition-colors hover:bg-accent/80 disabled:opacity-50 disabled:cursor-not-allowed"
-        disabled={submitting || !body.trim()}
+        disabled={!canSubmit}
         onclick={submit}
       >
         Submit
