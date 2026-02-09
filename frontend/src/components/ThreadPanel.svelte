@@ -10,6 +10,7 @@
   interface Props {
     threads: ThreadResponse[];
     highlightThreadId: string | null;
+    visibleLine: number | null;
     diffLines: Set<number>;
     onThreadsChanged: () => void;
     onNavigateToThread: (lineStart: number) => void;
@@ -18,6 +19,7 @@
   let {
     threads,
     highlightThreadId,
+    visibleLine = null,
     diffLines,
     onThreadsChanged,
     onNavigateToThread,
@@ -69,6 +71,24 @@
         el?.scrollIntoView({ behavior: "smooth", block: "nearest" });
       });
     }
+  });
+
+  // Scroll-sync: when sorted by location, follow the diff scroll
+  let lastSyncedThreadId: string | null = null;
+  $effect(() => {
+    if (sortField !== "location" || visibleLine == null) return;
+    const sorted = filteredAndSortedThreads();
+    if (sorted.length === 0) return;
+    // Find first thread that covers or follows the visible line
+    const target =
+      sorted.find((t) => t.line_end >= visibleLine) ??
+      sorted[sorted.length - 1];
+    if (!target || target.id === lastSyncedThreadId) return;
+    lastSyncedThreadId = target.id;
+    requestAnimationFrame(() => {
+      const el = document.getElementById(`thread-${target.id}`);
+      el?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
   });
 
   let replyTexts = $state<Record<string, string>>({});

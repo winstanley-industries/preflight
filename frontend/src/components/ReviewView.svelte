@@ -41,6 +41,9 @@
   let highlightThreadId = $state<string | null>(null);
   let navigateToLine = $state<number | null>(null);
   let diffLines = $state<Set<number>>(new Set());
+  let mainEl = $state<HTMLElement | null>(null);
+  let visibleLine = $state<number | null>(null);
+  let suppressSync = false;
 
   // Resizable pane state
   const FILE_TREE_DEFAULT = 240;
@@ -118,6 +121,36 @@
       "preflight:threadPanelWidth",
       String(threadPanelWidth),
     );
+  }
+
+  // Detect the topmost visible line in the diff for thread panel scroll sync
+  let rafPending = false;
+  function handleDiffScroll() {
+    if (suppressSync || !mainEl || rafPending) return;
+    rafPending = true;
+    requestAnimationFrame(() => {
+      rafPending = false;
+      if (!mainEl || suppressSync) return;
+      const rect = mainEl.getBoundingClientRect();
+      const x = rect.left + 50;
+      for (
+        let y = rect.top + 5;
+        y < Math.min(rect.top + 200, rect.bottom);
+        y += 20
+      ) {
+        const el = document.elementFromPoint(x, y);
+        if (!el) continue;
+        const lineEl = (el.closest("[id^='L']") ??
+          el.querySelector("[id^='L']")) as HTMLElement | null;
+        if (lineEl) {
+          const match = lineEl.id.match(/^L(\d+)$/);
+          if (match) {
+            visibleLine = parseInt(match[1], 10);
+            return;
+          }
+        }
+      }
+    });
   }
 
   // ResizeObserver to clamp panes when the window shrinks
@@ -419,7 +452,11 @@
       />
 
       <!-- Diff -->
-      <main class="flex-1 overflow-auto min-w-0">
+      <main
+        class="flex-1 overflow-auto min-w-0"
+        bind:this={mainEl}
+        onscroll={handleDiffScroll}
+      >
         {#if selectedFile}
           <DiffView
             {reviewId}
@@ -474,12 +511,15 @@
           <ThreadPanel
             {threads}
             {highlightThreadId}
+            {visibleLine}
             {diffLines}
             onNavigateToThread={(line) => {
+              suppressSync = true;
               navigateToLine = line;
               setTimeout(() => {
                 navigateToLine = null;
-              }, 100);
+                suppressSync = false;
+              }, 500);
             }}
             onThreadsChanged={() => {
               if (selectedFile) loadThreads(selectedFile);
