@@ -5,6 +5,7 @@
     listRevisions,
     listThreads,
     createRevision,
+    updateReviewStatus,
     ApiError,
   } from "../lib/api";
   import { navigate } from "../lib/router.svelte";
@@ -35,6 +36,7 @@
   let selectedFile = $state<string | null>(null);
   let error = $state<string | null>(null);
   let refreshMessage = $state<string | null>(null);
+  let statusUpdating = $state(false);
   let threadsPanelOpen = $state(true);
   let highlightThreadId = $state<string | null>(null);
   let navigateToLine = $state<number | null>(null);
@@ -229,6 +231,20 @@
     }
   }
 
+  async function toggleStatus() {
+    if (!review || statusUpdating) return;
+    const newStatus = review.status === "Open" ? "Closed" : "Open";
+    statusUpdating = true;
+    try {
+      await updateReviewStatus(reviewId, { status: newStatus });
+      review = { ...review, status: newStatus };
+    } catch (e: unknown) {
+      error = e instanceof Error ? e.message : "Failed to update status";
+    } finally {
+      statusUpdating = false;
+    }
+  }
+
   $effect(() => {
     load();
   });
@@ -327,6 +343,16 @@
           {review.open_thread_count} unresolved
         </span>
       {/if}
+      <button
+        class="ml-auto text-xs px-2.5 py-1 rounded-md border transition-colors cursor-pointer
+          {review.status === 'Open'
+          ? 'border-border text-text-muted hover:text-badge-deleted hover:border-badge-deleted/50'
+          : 'border-border text-text-muted hover:text-status-open hover:border-status-open/50'}"
+        disabled={statusUpdating}
+        onclick={toggleStatus}
+      >
+        {review.status === "Open" ? "Close review" : "Reopen review"}
+      </button>
     </header>
 
     <!-- Revision timeline -->
