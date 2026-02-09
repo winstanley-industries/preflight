@@ -1219,14 +1219,17 @@ dependencies = [
 name = "preflight-mcp"
 version = "0.1.0"
 dependencies = [
+ "axum",
  "chrono",
  "futures-util",
  "preflight-core",
+ "preflight-server",
  "reqwest",
  "rmcp",
  "schemars",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
  "tokio-tungstenite",
  "urlencoding",
