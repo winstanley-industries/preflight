@@ -5,9 +5,20 @@
   import type { ReviewResponse } from "../lib/types";
   import ConfirmDialog from "./ConfirmDialog.svelte";
 
+  type StatusFilter = "Open" | "Closed" | "All";
+  type SortField =
+    | "updated_desc"
+    | "updated_asc"
+    | "files"
+    | "threads"
+    | "open_threads";
+
   let reviews = $state<ReviewResponse[]>([]);
   let error = $state<string | null>(null);
   let loading = $state(true);
+  let statusFilter = $state<StatusFilter>("Open");
+  let sortField = $state<SortField>("updated_desc");
+  let searchQuery = $state("");
 
   // Confirmation dialog state
   let confirmDialog = $state<{
@@ -16,13 +27,46 @@
     onconfirm: () => void;
   } | null>(null);
 
-  function sortedReviews(): ReviewResponse[] {
-    return [...reviews].sort((a, b) => {
-      if (a.status !== b.status) return a.status === "Open" ? -1 : 1;
-      return (
-        new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+  function filteredAndSortedReviews(): ReviewResponse[] {
+    let filtered = reviews;
+
+    // Status filter
+    if (statusFilter !== "All") {
+      filtered = filtered.filter((r) => r.status === statusFilter);
+    }
+
+    // Text search
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      filtered = filtered.filter(
+        (r) => r.title && r.title.toLowerCase().includes(q),
       );
+    }
+
+    // Sort
+    return [...filtered].sort((a, b) => {
+      switch (sortField) {
+        case "updated_desc":
+          return (
+            new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+          );
+        case "updated_asc":
+          return (
+            new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime()
+          );
+        case "files":
+          return b.file_count - a.file_count;
+        case "threads":
+          return b.thread_count - a.thread_count;
+        case "open_threads":
+          return b.open_thread_count - a.open_thread_count;
+      }
     });
+  }
+
+  function statusCount(status: StatusFilter): number {
+    if (status === "All") return reviews.length;
+    return reviews.filter((r) => r.status === status).length;
   }
 
   function closedCount(): number {
@@ -119,7 +163,7 @@
 
 <div class="min-h-screen">
   <header
-    class="max-w-2xl mx-auto px-6 pt-12 pb-6 flex items-center justify-between"
+    class="max-w-5xl mx-auto px-8 pt-12 pb-4 flex items-center justify-between"
   >
     <h1 class="text-xl font-semibold">preflight</h1>
     {#if closedCount() > 0}
@@ -132,7 +176,7 @@
     {/if}
   </header>
 
-  <main class="max-w-2xl mx-auto px-6">
+  <main class="max-w-5xl mx-auto px-8">
     {#if loading}
       <p class="text-text-muted">Loading...</p>
     {:else if error}
@@ -140,22 +184,69 @@
     {:else if reviews.length === 0}
       <p class="text-text-muted">No reviews yet.</p>
     {:else}
-      <ul class="space-y-1">
-        {#each sortedReviews() as review (review.id)}
-          <li class="group">
-            <div
-              class="flex items-center px-4 py-3 rounded-lg hover:bg-bg-hover transition-colors cursor-pointer"
-              role="button"
-              tabindex="0"
-              onclick={() => navigate(`/reviews/${review.id}`)}
-              onkeydown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  navigate(`/reviews/${review.id}`);
-                }
-              }}
+      <!-- Filter/sort toolbar -->
+      <div class="flex items-center gap-3 mb-3">
+        <!-- Status tabs -->
+        <div class="flex items-center gap-1 text-sm">
+          {#each ["Open", "Closed", "All"] as status (status)}
+            <button
+              class="px-2.5 py-1 rounded-md transition-colors cursor-pointer {statusFilter ===
+              status
+                ? 'bg-bg-hover text-text'
+                : 'text-text-muted hover:text-text'}"
+              onclick={() => (statusFilter = status as StatusFilter)}
             >
-              <div class="flex items-center justify-between gap-4 w-full">
+              {status}
+              <span class="text-text-faint ml-0.5"
+                >{statusCount(status as StatusFilter)}</span
+              >
+            </button>
+          {/each}
+        </div>
+
+        <!-- Search -->
+        <div class="flex-1">
+          <input
+            type="text"
+            placeholder="Filter by title..."
+            bind:value={searchQuery}
+            class="w-full bg-transparent text-sm text-text placeholder:text-text-faint border border-border rounded-md px-2.5 py-1 outline-none focus:border-text-muted transition-colors"
+          />
+        </div>
+
+        <!-- Sort dropdown -->
+        <select
+          bind:value={sortField}
+          class="bg-bg-surface text-sm text-text-muted border border-border rounded-md px-2 py-1 outline-none cursor-pointer focus:border-text-muted transition-colors"
+        >
+          <option value="updated_desc">Newest</option>
+          <option value="updated_asc">Oldest</option>
+          <option value="files">Most files</option>
+          <option value="threads">Most threads</option>
+          <option value="open_threads">Most open threads</option>
+        </select>
+      </div>
+
+      <!-- Review list -->
+      {#if filteredAndSortedReviews().length === 0}
+        <p class="text-text-muted py-4">No matching reviews.</p>
+      {:else}
+        <ul class="space-y-1">
+          {#each filteredAndSortedReviews() as review (review.id)}
+            <li class="group">
+              <div
+                class="grid items-center px-4 py-3 rounded-lg hover:bg-bg-hover transition-colors cursor-pointer"
+                style="grid-template-columns: 1fr auto;"
+                role="button"
+                tabindex="0"
+                onclick={() => navigate(`/reviews/${review.id}`)}
+                onkeydown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    navigate(`/reviews/${review.id}`);
+                  }
+                }}
+              >
                 <div class="flex items-center gap-3 min-w-0">
                   <span class="truncate font-medium">
                     {review.title ?? "Untitled review"}
@@ -170,18 +261,18 @@
                   </span>
                 </div>
                 <div
-                  class="flex items-center gap-4 shrink-0 text-sm text-text-muted"
+                  class="flex items-center gap-4 text-sm text-text-muted ml-4"
                 >
-                  <span>{review.file_count} files</span>
+                  <span class="w-14 text-right">{review.file_count} files</span>
                   <span
-                    class={review.open_thread_count > 0
-                      ? "text-status-open"
-                      : ""}
+                    class="w-28 text-right {review.open_thread_count > 0
+                      ? 'text-status-open'
+                      : ''}"
                     >{review.thread_count} threads{review.open_thread_count > 0
                       ? ` (${review.open_thread_count} open)`
                       : ""}</span
                   >
-                  <span class="text-text-faint"
+                  <span class="w-16 text-right text-text-faint"
                     >{relativeTime(review.updated_at)}</span
                   >
                   <button
@@ -208,10 +299,10 @@
                   </button>
                 </div>
               </div>
-            </div>
-          </li>
-        {/each}
-      </ul>
+            </li>
+          {/each}
+        </ul>
+      {/if}
     {/if}
   </main>
 </div>
