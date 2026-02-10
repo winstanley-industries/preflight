@@ -5,14 +5,15 @@ Dispatch a code review and orchestrate the review loop. This command creates (or
 ## Step 1: Find or create a review
 
 1. Determine the review scope by running `git log --oneline main..HEAD` (or `master..HEAD`) to understand what commits are on the current branch. If the branch has diverged from the default branch, pass the default branch name as `base_ref`.
-2. Call `find_or_create_review` via the `preflight` MCP server with:
+2. Run `git status` to check for untracked files. If any appear relevant to the changes being reviewed (new source files, config files — not temp/build artifacts), ask the user whether they should be staged. Stage approved files before creating the review so it includes the complete set of changes from the start.
+3. Call `find_or_create_review` via the `preflight` MCP server with:
    - `repo_path`: the absolute path to the current git repository
    - `title`: a short summary derived from the recent changes (optional)
    - `base_ref`: the base branch or ref to diff against (optional — if omitted, the server auto-detects the merge-base with the default branch)
    This will return an existing open review for the repo if one exists, or create a new one.
-3. Store the returned `review_id`.
-4. Call `get_review` with the `review_id` to retrieve the full review metadata and list of changed files.
-5. Build a `changed_files` summary string listing each file path and its change type (added, modified, deleted). This will be passed to the review agent for context.
+4. Store the returned `review_id`.
+5. Call `get_review` with the `review_id` to retrieve the full review metadata and list of changed files.
+6. Build a `changed_files` summary string listing each file path and its change type (added, modified, deleted). This will be passed to the review agent for context.
 
 If review creation fails, inform the user with the error details and stop.
 
@@ -20,10 +21,10 @@ If review creation fails, inform the user with the error details and stop.
 
 Ask the user if they'd like you to annotate non-trivial changes with explanations before the reviewer begins.
 
-If the user agrees:
+If the user agrees, annotations will run concurrently with the review agent (see Step 2). Prepare the annotation work now:
 
 1. Identify files with non-trivial changes from the `changed_files` list. Skip lock files, generated files (e.g., `package-lock.json`, `Cargo.lock`), and straightforward changes (simple renames, import additions, etc.).
-2. To understand what changed in each file, use `git diff main -- <file>` via Bash (plain-text, compact output). To understand surrounding context, use the `Read` tool to read the source file directly. **Do NOT use `get_diff` from the MCP server** — it returns large HTML-highlighted output that wastes context.
+2. If you already have sufficient context about the changes (e.g., you just implemented them in this conversation), write annotations directly from your existing knowledge — do not re-read diffs or source files. Only use `git diff main -- <file>` or `Read` when you need additional context (e.g., resuming a review you didn't implement, or changes made earlier in the conversation that have fallen out of context).
 3. For each non-trivial file, call `create_thread` via the `preflight` MCP server with:
    - `review_id`: the current review ID
    - `file_path`: the file being annotated
@@ -37,16 +38,18 @@ If the user declines or skips, proceed directly to Step 2.
 ## Step 2: Gather design context and launch the review agent
 
 1. Check for design or plan documents that provide architectural context for the changes. Look in `.docs/plans/` and any other obvious locations. If found, read the relevant document(s) and build a `design_context` string summarizing the design intent.
-2. Use the **Task tool** to launch the `review-agent` as a background task. Pass it:
-   - `review_id` -- the UUID of the review
-   - `changed_files` -- the summary string from Step 1
-   - `design_context` -- (if available) the design/plan content or a summary of it
-2. Tell the user the review is live and provide the URL:
+2. Launch the review agent and annotations concurrently:
+   - Use the **Task tool** to launch the `review-agent` as a background task. Pass it:
+     - `review_id` -- the UUID of the review
+     - `changed_files` -- the summary string from Step 1
+     - `design_context` -- (if available) the design/plan content or a summary of it
+   - If annotations were requested in Step 1.5, perform them now (in the foreground) while the review agent starts up in the background. This way the reviewer can start browsing the diff and leaving comments immediately while annotations trickle in.
+3. Tell the user the review is live and provide the URL:
    ```
    Review is ready for discussion at: http://127.0.0.1:3000/reviews/{review_id}
    ```
-3. Explain that the review agent is running in the background and will respond to comments. The user can open the Preflight UI, leave comments, and discuss changes. When they are satisfied, they can click "Request Revision" in the UI to signal that the agent should compile a change list.
-4. Yield control back to the user. They regain their session and can continue working or wait.
+4. Explain that the review agent is running in the background and will respond to comments. The user can open the Preflight UI, leave comments, and discuss changes. When they are satisfied, they can click "Request Revision" in the UI to signal that the agent should compile a change list.
+5. Yield control back to the user. They regain their session and can continue working or wait.
 
 ## Step 3: Wait for agent results
 
