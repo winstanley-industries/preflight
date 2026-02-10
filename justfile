@@ -100,5 +100,5 @@ release-bump level:
     version=$(cargo metadata --no-deps --format-version=1 | jq -r '.packages[0].version')
     cd frontend && npm version "$version" --no-git-tag-version
     cd ..
-    jq --arg v "$version" '.version = $v' plugin/.claude-plugin/plugin.json > plugin/.claude-plugin/plugin.json.tmp \
-        && mv plugin/.claude-plugin/plugin.json.tmp plugin/.claude-plugin/plugin.json
+    jq --arg v "$version" '.version = $v' .claude-plugin/plugin.json > .claude-plugin/plugin.json.tmp \
+        && mv .claude-plugin/plugin.json.tmp .claude-plugin/plugin.json
