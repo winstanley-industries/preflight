@@ -1,0 +1,5 @@
+{
+  "name": "preflight",
+  "description": "Local code review tool for AI-generated changes",
+  "version": "0.2.0"
+}
