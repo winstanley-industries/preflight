@@ -75,16 +75,16 @@ impl AgentPresenceTracker {
             entry.disconnect_handle = Some(tokio::spawn(async move {
                 tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                 let mut map = inner.lock().await;
-                if let Some(entry) = map.get_mut(&review_id) {
-                    if entry.connected {
-                        entry.connected = false;
-                        let _ = ws_tx.send(WsEvent {
-                            event_type: WsEventType::AgentPresenceChanged,
-                            review_id: review_id.to_string(),
-                            payload: serde_json::json!({ "connected": false }),
-                            timestamp: Utc::now(),
-                        });
-                    }
+                if let Some(entry) = map.get_mut(&review_id)
+                    && entry.connected
+                {
+                    entry.connected = false;
+                    let _ = ws_tx.send(WsEvent {
+                        event_type: WsEventType::AgentPresenceChanged,
+                        review_id: review_id.to_string(),
+                        payload: serde_json::json!({ "connected": false }),
+                        timestamp: Utc::now(),
+                    });
                 }
             }));
         }
