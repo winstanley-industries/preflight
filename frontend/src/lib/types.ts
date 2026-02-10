@@ -151,7 +151,13 @@ export type WsEventType =
   | "comment_added"
   | "thread_status_changed"
   | "thread_acknowledged"
-  | "thread_poked";
+  | "thread_poked"
+  | "revision_requested"
+  | "agent_presence_changed";
+
+export interface AgentPresenceResponse {
+  connected: boolean;
+}
 
 export interface WsEvent {
   event_type: WsEventType;

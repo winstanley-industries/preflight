@@ -1,5 +1,6 @@
 import type {
   AddCommentRequest,
+  AgentPresenceResponse,
   AgentStatus,
   CommentResponse,
   CreateReviewRequest,
@@ -185,6 +186,20 @@ export function addComment(
   return request(`/api/threads/${threadId}/comments`, {
     method: "POST",
     body: JSON.stringify(req),
+  });
+}
+
+// --- Agent ---
+
+export function getAgentPresence(
+  reviewId: string,
+): Promise<AgentPresenceResponse> {
+  return request(`/api/reviews/${reviewId}/agent-status`);
+}
+
+export function requestRevision(reviewId: string): Promise<void> {
+  return request(`/api/reviews/${reviewId}/request-revision`, {
+    method: "POST",
   });
 }
 
