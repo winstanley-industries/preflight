@@ -14,7 +14,7 @@ use preflight_core::review::{ThreadOrigin, ThreadStatus};
 use preflight_core::store::CreateReviewInput;
 
 pub fn router() -> axum::Router<AppState> {
-    use axum::routing::{get, patch};
+    use axum::routing::{get, patch, post};
     axum::Router::new()
         .route(
             "/",
@@ -24,6 +24,7 @@ pub fn router() -> axum::Router<AppState> {
         )
         .route("/{id}", get(get_review).delete(delete_review))
         .route("/{id}/status", patch(update_review_status))
+        .route("/{id}/request-revision", post(request_revision))
 }
 
 async fn create_review(
@@ -141,6 +142,23 @@ async fn update_review_status(
         event_type: WsEventType::ReviewStatusChanged,
         review_id: id.to_string(),
         payload: serde_json::json!({ "status": request.status }),
+        timestamp: Utc::now(),
+    });
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn request_revision(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, ApiError> {
+    let review = state.store.get_review(id).await?;
+    if review.status != preflight_core::review::ReviewStatus::Open {
+        return Err(ApiError::BadRequest("Review is not open".into()));
+    }
+    let _ = state.ws_tx.send(WsEvent {
+        event_type: WsEventType::RevisionRequested,
+        review_id: id.to_string(),
+        payload: serde_json::json!({}),
         timestamp: Utc::now(),
     });
     Ok(StatusCode::NO_CONTENT)
@@ -606,5 +624,61 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_request_revision() {
+        let app = test_app().await;
+        let (_repo_dir, repo_path) = setup_test_repo();
+        let id = create_review_for_test(&app, &repo_path).await;
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/api/reviews/{id}/request-revision"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    }
+
+    #[tokio::test]
+    async fn test_request_revision_closed_review() {
+        let app = test_app().await;
+        let (_repo_dir, repo_path) = setup_test_repo();
+        let id = create_review_for_test(&app, &repo_path).await;
+
+        // Close the review first
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .method("PATCH")
+                    .uri(format!("/api/reviews/{id}/status"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({ "status": "Closed" }).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/api/reviews/{id}/request-revision"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 }
