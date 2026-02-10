@@ -20,4 +20,4 @@ urlencoding = "2.1.3"
 [dev-dependencies]
 axum = "0.8.8"
 preflight-server = { path = "../preflight-server" }
-tempfile = "3.24.0"
+tempfile = "3.25.0"
