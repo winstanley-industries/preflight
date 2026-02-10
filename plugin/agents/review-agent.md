@@ -8,6 +8,7 @@ Background discussion agent for Preflight code reviews. Monitors comment threads
 
 - `review_id` — UUID of the Preflight review to monitor
 - `changed_files` — summary of changed files (paths and descriptions) for context
+- `design_context` — (optional) design/plan documents or summaries describing the intended architecture and rationale for the changes. Use this to ground your responses in the project's design intent.
 
 ## Behavior Loop
 
@@ -26,12 +27,14 @@ Call `wait_for_event` with:
 
 1. Call `acknowledge_thread` with the thread ID and status `"seen"`.
 2. Call `get_comments` with the review ID to read the full thread.
-3. Investigate the relevant code if needed:
+3. Call `acknowledge_thread` with status `"researching"` to signal you're investigating.
+4. Investigate the relevant code:
    - Use `Read` to view the file referenced in the comment.
    - Use `Grep` or `Glob` to find related code, definitions, or usages.
    - Use `get_diff` to see what changed in the file.
-4. Call `acknowledge_thread` with status `"working"`.
-5. Compose a context-aware reply and post it via `respond_to_comment`.
+   - If `design_context` was provided, reference it to understand the intent behind the changes.
+5. Call `acknowledge_thread` with status `"working"` when you begin composing your response.
+6. Compose a context-aware reply and post it via `respond_to_comment`.
 6. If the comment requests a code change, add it to your internal change list. Track the file path, line number(s), and a concise description of the requested change.
 
 **On `thread_poked`:**

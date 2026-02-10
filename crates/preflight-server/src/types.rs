@@ -14,6 +14,13 @@ pub struct CreateReviewRequest {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct FindOrCreateReviewRequest {
+    pub repo_path: String,
+    pub title: Option<String>,
+    pub base_ref: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct CreateRevisionRequest {
     pub trigger: preflight_core::review::RevisionTrigger,
     pub message: Option<String>,

@@ -71,6 +71,18 @@ pub struct CreateReviewInput {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct FindOrCreateReviewInput {
+    #[schemars(description = "Absolute path to the git repository")]
+    pub repo_path: String,
+    #[schemars(description = "Optional title for the review (used only when creating a new review)")]
+    pub title: Option<String>,
+    #[schemars(
+        description = "Git ref to diff against (e.g. HEAD, main). If omitted, auto-detects the merge-base with the default branch."
+    )]
+    pub base_ref: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct CreateThreadInput {
     #[schemars(description = "UUID of the review")]
     pub review_id: String,
@@ -114,7 +126,7 @@ pub struct ResolveThreadInput {
 pub struct AcknowledgeThreadInput {
     #[schemars(description = "UUID of the comment thread")]
     pub thread_id: String,
-    #[schemars(description = "Agent status: 'seen' or 'working'")]
+    #[schemars(description = "Agent status: 'seen', 'researching', or 'working'")]
     pub status: String,
 }
 
@@ -289,15 +301,40 @@ impl PreflightMcp {
         &self,
         Parameters(input): Parameters<CreateReviewInput>,
     ) -> Result<String, String> {
+        let base_ref = input.base_ref.unwrap_or_else(|| {
+            preflight_core::git_diff::detect_default_base(std::path::Path::new(&input.repo_path))
+        });
         let body = serde_json::json!({
             "repo_path": input.repo_path,
             "title": input.title,
-            "base_ref": input.base_ref.unwrap_or_else(|| "HEAD".to_string()),
+            "base_ref": base_ref,
         });
 
         let review: serde_json::Value = self
             .client
             .post("/api/reviews", &body)
+            .await
+            .map_err(format_error)?;
+
+        serde_json::to_string_pretty(&review).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "Find an existing open review for a repository, or create a new one if none exists. Preferred over create_review for idempotent review setup."
+    )]
+    async fn find_or_create_review(
+        &self,
+        Parameters(input): Parameters<FindOrCreateReviewInput>,
+    ) -> Result<String, String> {
+        let body = serde_json::json!({
+            "repo_path": input.repo_path,
+            "title": input.title,
+            "base_ref": input.base_ref,
+        });
+
+        let review: serde_json::Value = self
+            .client
+            .post("/api/reviews/find-or-create", &body)
             .await
             .map_err(format_error)?;
 
@@ -382,7 +419,7 @@ impl PreflightMcp {
     }
 
     #[tool(
-        description = "Acknowledge a comment thread to signal that the agent has seen it or is working on it. Use 'seen' when you first read a comment, 'working' when you begin acting on it."
+        description = "Acknowledge a comment thread to signal that the agent has seen it or is working on it. Use 'seen' when you first read a comment, 'researching' when you begin investigating the code, 'working' when you begin composing a response."
     )]
     async fn acknowledge_thread(
         &self,
@@ -390,10 +427,11 @@ impl PreflightMcp {
     ) -> Result<String, String> {
         let status = match input.status.to_lowercase().as_str() {
             "seen" => "Seen",
+            "researching" => "Researching",
             "working" => "Working",
             _ => {
                 return Err(format!(
-                    "Invalid status '{}': must be 'seen' or 'working'",
+                    "Invalid status '{}': must be 'seen', 'researching', or 'working'",
                     input.status
                 ));
             }
@@ -511,8 +549,9 @@ impl ServerHandler for PreflightMcp {
             instructions: Some(
                 "Preflight is a local code review tool. Use these tools to participate in code reviews.\n\n\
                  Core loop: list_reviews → get_review → get_diff → get_comments → respond_to_comment\n\n\
-                 Agent actions: create_review (start a review), create_thread (comment on code or explain it \
-                 with origin 'AgentExplanation'), submit_revision (after making changes)\n\n\
+                 Agent actions: find_or_create_review (idempotent review setup), create_review (start a review), \
+                 create_thread (comment on code or explain it with origin 'AgentExplanation'), \
+                 submit_revision (after making changes)\n\n\
                  Activity: acknowledge_thread to signal 'seen' or 'working' on a thread\n\n\
                  Lifecycle: update_review_status (open/close), resolve_thread (resolve/reopen)\n\n\
                  Notifications: Use wait_for_event from a background task to monitor for new comments, \

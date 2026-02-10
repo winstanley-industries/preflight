@@ -1,25 +1,46 @@
-# /preflight
+# /review
 
 Dispatch a code review and orchestrate the review loop. This command creates (or resumes) a Preflight review for the current repository, launches a background review agent to discuss changes with the human reviewer, and implements requested changes across revision cycles until the review is closed.
 
 ## Step 1: Find or create a review
 
-1. Call `list_reviews` via the `preflight` MCP server to check for existing open reviews.
-2. Inspect each review's `repo_path` to find one that matches the current working directory.
-   - If an open review exists for this repo, use it. Store its `review_id`.
-   - If no matching review exists, call `create_review` with:
-     - `repo_path`: the absolute path to the current git repository
-     - `title`: a short summary derived from the recent changes (optional)
-3. Call `get_review` with the `review_id` to retrieve the full review metadata and list of changed files.
-4. Build a `changed_files` summary string listing each file path and its change type (added, modified, deleted). This will be passed to the review agent for context.
+1. Determine the review scope by running `git log --oneline main..HEAD` (or `master..HEAD`) to understand what commits are on the current branch. If the branch has diverged from the default branch, pass the default branch name as `base_ref`.
+2. Call `find_or_create_review` via the `preflight` MCP server with:
+   - `repo_path`: the absolute path to the current git repository
+   - `title`: a short summary derived from the recent changes (optional)
+   - `base_ref`: the base branch or ref to diff against (optional — if omitted, the server auto-detects the merge-base with the default branch)
+   This will return an existing open review for the repo if one exists, or create a new one.
+3. Store the returned `review_id`.
+4. Call `get_review` with the `review_id` to retrieve the full review metadata and list of changed files.
+5. Build a `changed_files` summary string listing each file path and its change type (added, modified, deleted). This will be passed to the review agent for context.
 
 If review creation fails, inform the user with the error details and stop.
 
-## Step 2: Launch the review agent
+## Step 1.5 (optional): Annotate non-trivial changes
 
-1. Use the **Task tool** to launch the `review-agent` as a background task. Pass it:
+Ask the user if they'd like you to annotate non-trivial changes with explanations before the reviewer begins.
+
+If the user agrees:
+
+1. Identify files with non-trivial changes from the `changed_files` list. Skip lock files, generated files (e.g., `package-lock.json`, `Cargo.lock`), and straightforward changes (simple renames, import additions, etc.).
+2. To understand what changed in each file, use `git diff main -- <file>` via Bash (plain-text, compact output). To understand surrounding context, use the `Read` tool to read the source file directly. **Do NOT use `get_diff` from the MCP server** — it returns large HTML-highlighted output that wastes context.
+3. For each non-trivial file, call `create_thread` via the `preflight` MCP server with:
+   - `review_id`: the current review ID
+   - `file_path`: the file being annotated
+   - `line_start` / `line_end`: the relevant line range
+   - `body`: a concise explanation of what the change does and why
+   - `origin`: `"AgentExplanation"`
+4. Keep annotations brief and focused on intent, not line-by-line narration.
+
+If the user declines or skips, proceed directly to Step 2.
+
+## Step 2: Gather design context and launch the review agent
+
+1. Check for design or plan documents that provide architectural context for the changes. Look in `.docs/plans/` and any other obvious locations. If found, read the relevant document(s) and build a `design_context` string summarizing the design intent.
+2. Use the **Task tool** to launch the `review-agent` as a background task. Pass it:
    - `review_id` -- the UUID of the review
    - `changed_files` -- the summary string from Step 1
+   - `design_context` -- (if available) the design/plan content or a summary of it
 2. Tell the user the review is live and provide the URL:
    ```
    Review is ready for discussion at: http://127.0.0.1:3000/reviews/{review_id}

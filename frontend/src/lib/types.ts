@@ -12,7 +12,7 @@ export type ThreadOrigin =
   | "ExplanationRequest"
   | "AgentExplanation";
 export type ThreadStatus = "Open" | "Resolved";
-export type AgentStatus = "Seen" | "Working";
+export type AgentStatus = "Seen" | "Researching" | "Working";
 export type AuthorType = "Human" | "Agent";
 export type LineKind = "Context" | "Added" | "Removed";
 export type RevisionTrigger = "Agent" | "Manual";
