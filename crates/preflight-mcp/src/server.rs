@@ -175,6 +175,47 @@ impl PreflightMcp {
             ws_tx,
         }
     }
+
+    /// Check for threads that need agent attention (catch-up for missed events).
+    /// Returns a synthetic comment_added event JSON string if a pending thread is found.
+    async fn check_pending_threads(&self, review_id: &str) -> Option<String> {
+        let threads: serde_json::Value = self
+            .client
+            .get(&format!("/api/reviews/{review_id}/threads"))
+            .await
+            .ok()?;
+
+        for thread in threads.as_array()? {
+            if thread["status"].as_str() != Some("Open") {
+                continue;
+            }
+            if !thread["agent_status"].is_null() {
+                continue;
+            }
+            let Some(comments) = thread["comments"].as_array() else {
+                continue;
+            };
+            let Some(last) = comments.last() else {
+                continue;
+            };
+            if last["author_type"].as_str() != Some("Human") {
+                continue;
+            }
+
+            let event = serde_json::json!({
+                "event_type": "comment_added",
+                "review_id": review_id,
+                "payload": {
+                    "thread_id": thread["id"],
+                    "comment": last,
+                    "catch_up": true
+                },
+                "timestamp": chrono::Utc::now(),
+            });
+            return serde_json::to_string_pretty(&event).ok();
+        }
+        None
+    }
 }
 
 #[tool_router]
@@ -472,6 +513,16 @@ impl PreflightMcp {
                 .client
                 .put(&format!("/api/reviews/{rid}/agent-presence"), &body)
                 .await;
+
+            // Catch-up: check for threads needing attention before blocking
+            if let Some(event_json) = self.check_pending_threads(rid).await {
+                let body = serde_json::json!({ "connected": false });
+                let _ = self
+                    .client
+                    .put(&format!("/api/reviews/{rid}/agent-presence"), &body)
+                    .await;
+                return Ok(event_json);
+            }
         }
 
         let result = tokio::time::timeout(timeout, async {
@@ -751,5 +802,257 @@ mod tests {
 
         let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
         assert_eq!(parsed["event_type"], "thread_poked");
+    }
+
+    // --- Integration tests for catch-up behavior (real HTTP server) ---
+
+    async fn start_test_server() -> u16 {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("state.json");
+        let store = preflight_core::json_store::JsonFileStore::new(&path)
+            .await
+            .unwrap();
+        Box::leak(Box::new(dir));
+
+        let app = preflight_server::app(std::sync::Arc::new(store));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        tokio::spawn(async move {
+            axum::serve(listener, app.into_make_service())
+                .await
+                .unwrap();
+        });
+
+        port
+    }
+
+    fn setup_test_repo() -> String {
+        use std::process::Command;
+
+        let dir = tempfile::TempDir::new().unwrap();
+        let p = dir.path().to_owned();
+
+        Command::new("git")
+            .args(["init"])
+            .current_dir(&p)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.email", "t@t.com"])
+            .current_dir(&p)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.name", "T"])
+            .current_dir(&p)
+            .output()
+            .unwrap();
+
+        std::fs::create_dir_all(p.join("src")).unwrap();
+        std::fs::write(p.join("src/main.rs"), "fn main() {}\n").unwrap();
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(&p)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "init"])
+            .current_dir(&p)
+            .output()
+            .unwrap();
+
+        std::fs::write(
+            p.join("src/main.rs"),
+            "use std::io;\n\nfn main() {\n    println!(\"hello\");\n}\n",
+        )
+        .unwrap();
+
+        let repo_path = p.to_str().unwrap().to_string();
+        Box::leak(Box::new(dir));
+        repo_path
+    }
+
+    async fn http_create_review(http: &reqwest::Client, base_url: &str, repo_path: &str) -> String {
+        let resp = http
+            .post(format!("{base_url}/api/reviews"))
+            .json(&serde_json::json!({
+                "title": "Test review",
+                "repo_path": repo_path,
+                "base_ref": "HEAD"
+            }))
+            .send()
+            .await
+            .unwrap();
+        assert!(resp.status().is_success());
+        let json: serde_json::Value = resp.json().await.unwrap();
+        json["id"].as_str().unwrap().to_string()
+    }
+
+    async fn http_create_thread(http: &reqwest::Client, base_url: &str, review_id: &str) -> String {
+        let resp = http
+            .post(format!("{base_url}/api/reviews/{review_id}/threads"))
+            .json(&serde_json::json!({
+                "file_path": "src/main.rs",
+                "line_start": 1,
+                "line_end": 2,
+                "origin": "Comment",
+                "body": "test comment",
+                "author_type": "Human"
+            }))
+            .send()
+            .await
+            .unwrap();
+        assert!(resp.status().is_success());
+        let json: serde_json::Value = resp.json().await.unwrap();
+        json["id"].as_str().unwrap().to_string()
+    }
+
+    /// Set up a test server with a review and return (port, review_id).
+    async fn setup_server_with_review() -> (u16, String) {
+        let port = start_test_server().await;
+        let http = reqwest::Client::new();
+        let base_url = format!("http://127.0.0.1:{port}");
+        let repo_path = setup_test_repo();
+        let review_id = http_create_review(&http, &base_url, &repo_path).await;
+        (port, review_id)
+    }
+
+    #[tokio::test]
+    async fn wait_for_event_returns_pending_thread_immediately() {
+        let (port, review_id) = setup_server_with_review().await;
+        let http = reqwest::Client::new();
+        let base_url = format!("http://127.0.0.1:{port}");
+        let thread_id = http_create_thread(&http, &base_url, &review_id).await;
+
+        let client = crate::client::PreflightClient::new(port);
+        let (ws_tx, _) = broadcast::channel(64);
+        let mcp = PreflightMcp::new(client, ws_tx);
+
+        // Should return immediately with the pending thread (not block until timeout)
+        let start = std::time::Instant::now();
+        let result = mcp
+            .wait_for_event(Parameters(WaitForEventInput {
+                review_id: Some(review_id.clone()),
+                event_types: None,
+                timeout_secs: Some(10),
+            }))
+            .await
+            .unwrap();
+        let elapsed = start.elapsed();
+
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["event_type"], "comment_added");
+        assert_eq!(parsed["payload"]["thread_id"], thread_id);
+        assert_eq!(parsed["payload"]["catch_up"], true);
+        assert!(
+            elapsed.as_secs() < 2,
+            "Should return immediately, took {elapsed:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn wait_for_event_skips_threads_with_agent_status() {
+        let (port, review_id) = setup_server_with_review().await;
+        let http = reqwest::Client::new();
+        let base_url = format!("http://127.0.0.1:{port}");
+        let thread_id = http_create_thread(&http, &base_url, &review_id).await;
+
+        // Set agent_status to Seen — thread is already acknowledged
+        let resp = http
+            .put(format!("{base_url}/api/threads/{thread_id}/agent-status"))
+            .json(&serde_json::json!({ "status": "Seen" }))
+            .send()
+            .await
+            .unwrap();
+        assert!(resp.status().is_success());
+
+        let client = crate::client::PreflightClient::new(port);
+        let (ws_tx, _) = broadcast::channel(64);
+        let mcp = PreflightMcp::new(client, ws_tx);
+
+        // Should timeout because the thread is already acknowledged
+        let result = mcp
+            .wait_for_event(Parameters(WaitForEventInput {
+                review_id: Some(review_id.clone()),
+                event_types: None,
+                timeout_secs: Some(1),
+            }))
+            .await
+            .unwrap();
+
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["timeout"], true);
+    }
+
+    #[tokio::test]
+    async fn wait_for_event_skips_resolved_threads() {
+        let (port, review_id) = setup_server_with_review().await;
+        let http = reqwest::Client::new();
+        let base_url = format!("http://127.0.0.1:{port}");
+        let thread_id = http_create_thread(&http, &base_url, &review_id).await;
+
+        // Resolve the thread
+        let resp = http
+            .patch(format!("{base_url}/api/threads/{thread_id}/status"))
+            .json(&serde_json::json!({ "status": "Resolved" }))
+            .send()
+            .await
+            .unwrap();
+        assert!(resp.status().is_success());
+
+        let client = crate::client::PreflightClient::new(port);
+        let (ws_tx, _) = broadcast::channel(64);
+        let mcp = PreflightMcp::new(client, ws_tx);
+
+        // Should timeout because the thread is resolved
+        let result = mcp
+            .wait_for_event(Parameters(WaitForEventInput {
+                review_id: Some(review_id.clone()),
+                event_types: None,
+                timeout_secs: Some(1),
+            }))
+            .await
+            .unwrap();
+
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["timeout"], true);
+    }
+
+    #[tokio::test]
+    async fn wait_for_event_skips_agent_last_comment() {
+        let (port, review_id) = setup_server_with_review().await;
+        let http = reqwest::Client::new();
+        let base_url = format!("http://127.0.0.1:{port}");
+        let thread_id = http_create_thread(&http, &base_url, &review_id).await;
+
+        // Add an Agent comment — agent spoke last, no attention needed
+        let resp = http
+            .post(format!("{base_url}/api/threads/{thread_id}/comments"))
+            .json(&serde_json::json!({
+                "author_type": "Agent",
+                "body": "agent response"
+            }))
+            .send()
+            .await
+            .unwrap();
+        assert!(resp.status().is_success());
+
+        let client = crate::client::PreflightClient::new(port);
+        let (ws_tx, _) = broadcast::channel(64);
+        let mcp = PreflightMcp::new(client, ws_tx);
+
+        // Should timeout because the agent spoke last
+        let result = mcp
+            .wait_for_event(Parameters(WaitForEventInput {
+                review_id: Some(review_id.clone()),
+                event_types: None,
+                timeout_secs: Some(1),
+            }))
+            .await
+            .unwrap();
+
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["timeout"], true);
     }
 }
