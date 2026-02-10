@@ -52,6 +52,15 @@ The MCP server connects to a running preflight web server (default port 3000).
 
 ### Claude Code
 
+**Via plugin (recommended):**
+
+```bash
+claude plugin marketplace add winstanley-industries/preflight
+claude plugin install -s user preflight@preflight
+```
+
+**Via MCP manually:**
+
 ```bash
 claude mcp add --scope user --transport stdio preflight -- preflight mcp
 ```
@@ -108,7 +117,22 @@ The agent will create a review via MCP. Open the preflight UI to review diffs, l
 
 **Tip:** Ask your agent to monitor the review in the background so it responds to your comments automatically.
 
-_A dedicated `/preflight` skill for Claude Code is coming soon._
+### Claude Code Plugin
+
+The plugin registers the MCP server and adds a `/preflight:review` slash command. Install it once and every Claude Code session will know how to participate in reviews without additional configuration.
+
+```bash
+claude plugin marketplace add winstanley-industries/preflight
+claude plugin install -s user preflight@preflight
+```
+
+Running `/preflight:review` in Claude Code will:
+
+1. Create (or resume) a review for your current branch
+2. Optionally annotate non-trivial changes with explanations
+3. Launch a background agent that monitors comments and responds to your questions in the Preflight UI
+4. When you click "Request Revision" in the UI, the agent compiles the requested changes and applies them
+5. Loop back — each revision starts a new round of discussion until you close the review
 
 ## Features
 
