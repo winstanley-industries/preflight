@@ -94,9 +94,9 @@ run-scenario:
 
 # Bump version across workspace (requires cargo-edit): just release-bump patch|minor|major
 release-bump level:
-    cargo set-version --workspace --bump {{level}}
     #!/usr/bin/env bash
     set -euo pipefail
+    cargo set-version --workspace --bump {{level}}
     version=$(cargo metadata --no-deps --format-version=1 | jq -r '.packages[0].version')
     cd frontend && npm version "$version" --no-git-tag-version
     cd ..
