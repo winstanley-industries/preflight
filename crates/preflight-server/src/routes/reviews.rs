@@ -107,8 +107,7 @@ async fn find_or_create_review(
             let open_thread_count = threads
                 .iter()
                 .filter(|t| {
-                    t.status == ThreadStatus::Open
-                        && t.origin != ThreadOrigin::AgentExplanation
+                    t.status == ThreadStatus::Open && t.origin != ThreadOrigin::AgentExplanation
                 })
                 .count();
             let revisions = state.store.get_revisions(review.id).await?;

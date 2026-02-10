@@ -74,7 +74,9 @@ pub struct CreateReviewInput {
 pub struct FindOrCreateReviewInput {
     #[schemars(description = "Absolute path to the git repository")]
     pub repo_path: String,
-    #[schemars(description = "Optional title for the review (used only when creating a new review)")]
+    #[schemars(
+        description = "Optional title for the review (used only when creating a new review)"
+    )]
     pub title: Option<String>,
     #[schemars(
         description = "Git ref to diff against (e.g. HEAD, main). If omitted, auto-detects the merge-base with the default branch."

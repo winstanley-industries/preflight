@@ -251,7 +251,9 @@
                 Agent has seen this
               </div>
             {:else if thread.agent_status === "Researching"}
-              <div class="flex items-center gap-1.5 text-xs text-text-muted mb-2">
+              <div
+                class="flex items-center gap-1.5 text-xs text-text-muted mb-2"
+              >
                 <svg
                   class="w-3.5 h-3.5"
                   viewBox="0 0 24 24"
