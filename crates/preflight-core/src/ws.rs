@@ -21,4 +21,6 @@ pub enum WsEventType {
     ThreadStatusChanged,
     ThreadAcknowledged,
     ThreadPoked,
+    RevisionRequested,
+    AgentPresenceChanged,
 }

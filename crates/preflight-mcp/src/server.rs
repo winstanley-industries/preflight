@@ -125,7 +125,7 @@ pub struct WaitForEventInput {
     )]
     pub review_id: Option<String>,
     #[schemars(
-        description = "Optional list of event types to filter. Valid values: review_created, review_status_changed, revision_created, thread_created, comment_added, thread_status_changed, thread_acknowledged, thread_poked. If omitted, matches any event type."
+        description = "Optional list of event types to filter. Valid values: review_created, review_status_changed, revision_created, thread_created, comment_added, thread_status_changed, thread_acknowledged, thread_poked, revision_requested, agent_presence_changed. If omitted, matches any event type."
     )]
     pub event_types: Option<Vec<String>>,
     #[schemars(description = "Timeout in seconds. Defaults to 300 (5 minutes). Max 600.")]
@@ -147,6 +147,8 @@ fn event_type_matches(event_type: &WsEventType, filter: &str) -> bool {
         "thread_status_changed" => matches!(event_type, WsEventType::ThreadStatusChanged),
         "thread_acknowledged" => matches!(event_type, WsEventType::ThreadAcknowledged),
         "thread_poked" => matches!(event_type, WsEventType::ThreadPoked),
+        "revision_requested" => matches!(event_type, WsEventType::RevisionRequested),
+        "agent_presence_changed" => matches!(event_type, WsEventType::AgentPresenceChanged),
         _ => false,
     }
 }
