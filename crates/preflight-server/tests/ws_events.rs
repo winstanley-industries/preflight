@@ -20,11 +20,15 @@ async fn app_with_ws_rx() -> (
     Box::leak(Box::new(dir));
 
     let (ws_tx, ws_rx) = broadcast::channel(64);
+    let agent_presence = Arc::new(preflight_server::state::AgentPresenceTracker::new(
+        ws_tx.clone(),
+    ));
     let state = preflight_server::state::AppState {
         store: Arc::new(store),
         highlighter: Arc::new(preflight_core::highlight::Highlighter::new()),
         ws_tx,
         agent_status: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+        agent_presence,
     };
 
     use axum::routing::get;

@@ -24,6 +24,7 @@ pub fn router() -> axum::Router<AppState> {
         )
         .route("/{id}", get(get_review).delete(delete_review))
         .route("/{id}/status", patch(update_review_status))
+        .route("/{id}/agent-status", get(get_agent_presence))
         .route("/{id}/request-revision", post(request_revision))
 }
 
@@ -162,6 +163,16 @@ async fn request_revision(
         timestamp: Utc::now(),
     });
     Ok(StatusCode::NO_CONTENT)
+}
+
+async fn get_agent_presence(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<crate::types::AgentPresenceResponse>, ApiError> {
+    // Verify the review exists
+    state.store.get_review(id).await?;
+    let connected = state.agent_presence.is_connected(id).await;
+    Ok(Json(crate::types::AgentPresenceResponse { connected }))
 }
 
 async fn delete_review(
@@ -645,6 +656,45 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    }
+
+    #[tokio::test]
+    async fn test_get_agent_presence_defaults_to_disconnected() {
+        let app = test_app().await;
+        let (_repo_dir, repo_path) = setup_test_repo();
+        let id = create_review_for_test(&app, &repo_path).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/reviews/{id}/agent-status"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let json = body_json(response).await;
+        assert_eq!(json["connected"], false);
+    }
+
+    #[tokio::test]
+    async fn test_get_agent_presence_not_found() {
+        let app = test_app().await;
+        let fake_id = uuid::Uuid::new_v4();
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/reviews/{fake_id}/agent-status"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]
