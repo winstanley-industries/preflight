@@ -14,7 +14,7 @@ use preflight_core::review::{ThreadOrigin, ThreadStatus};
 use preflight_core::store::CreateReviewInput;
 
 pub fn router() -> axum::Router<AppState> {
-    use axum::routing::{get, patch, post};
+    use axum::routing::{get, patch, post, put};
     axum::Router::new()
         .route(
             "/",
@@ -25,6 +25,7 @@ pub fn router() -> axum::Router<AppState> {
         .route("/{id}", get(get_review).delete(delete_review))
         .route("/{id}/status", patch(update_review_status))
         .route("/{id}/agent-status", get(get_agent_presence))
+        .route("/{id}/agent-presence", put(update_agent_presence))
         .route("/{id}/request-revision", post(request_revision))
 }
 
@@ -162,6 +163,21 @@ async fn request_revision(
         payload: serde_json::json!({}),
         timestamp: Utc::now(),
     });
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn update_agent_presence(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<crate::types::UpdateAgentPresenceRequest>,
+) -> Result<StatusCode, ApiError> {
+    // Verify review exists
+    state.store.get_review(id).await?;
+    if request.connected {
+        state.agent_presence.register(id).await;
+    } else {
+        state.agent_presence.deregister(id).await;
+    }
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -694,6 +710,83 @@ mod tests {
             .await
             .unwrap();
 
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_update_agent_presence() {
+        let app = test_app().await;
+        let (_repo_dir, repo_path) = setup_test_repo();
+        let id = create_review_for_test(&app, &repo_path).await;
+
+        // Register agent presence
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri(format!("/api/reviews/{id}/agent-presence"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({ "connected": true }).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+
+        // Verify agent is connected
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/reviews/{id}/agent-status"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let json = body_json(response).await;
+        assert_eq!(json["connected"], true);
+
+        // Deregister agent presence
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri(format!("/api/reviews/{id}/agent-presence"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({ "connected": false }).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    }
+
+    #[tokio::test]
+    async fn test_update_agent_presence_not_found() {
+        let app = test_app().await;
+        let fake_id = uuid::Uuid::new_v4();
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri(format!("/api/reviews/{fake_id}/agent-presence"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({ "connected": true }).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 

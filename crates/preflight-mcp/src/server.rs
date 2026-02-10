@@ -425,6 +425,15 @@ impl PreflightMcp {
         let timeout = std::time::Duration::from_secs(timeout_secs);
         let mut rx = self.ws_tx.subscribe();
 
+        // Register agent presence if review_id is provided
+        if let Some(ref rid) = input.review_id {
+            let body = serde_json::json!({ "connected": true });
+            let _ = self
+                .client
+                .put(&format!("/api/reviews/{rid}/agent-presence"), &body)
+                .await;
+        }
+
         let result = tokio::time::timeout(timeout, async {
             loop {
                 match rx.recv().await {
@@ -456,6 +465,15 @@ impl PreflightMcp {
             }
         })
         .await;
+
+        // Deregister agent presence if review_id is provided
+        if let Some(ref rid) = input.review_id {
+            let body = serde_json::json!({ "connected": false });
+            let _ = self
+                .client
+                .put(&format!("/api/reviews/{rid}/agent-presence"), &body)
+                .await;
+        }
 
         match result {
             Ok(Ok(event)) => {

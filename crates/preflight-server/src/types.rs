@@ -144,6 +144,11 @@ pub struct CommentResponse {
     pub created_at: DateTime<Utc>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct UpdateAgentPresenceRequest {
+    pub connected: bool,
+}
+
 #[derive(Debug, Serialize)]
 pub struct AgentPresenceResponse {
     pub connected: bool,
