@@ -9,7 +9,7 @@ pub struct WsEvent {
     pub timestamp: DateTime<Utc>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WsEventType {
     ReviewCreated,
@@ -21,4 +21,6 @@ pub enum WsEventType {
     ThreadStatusChanged,
     ThreadAcknowledged,
     ThreadPoked,
+    RevisionRequested,
+    AgentPresenceChanged,
 }

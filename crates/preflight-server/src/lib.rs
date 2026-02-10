@@ -21,11 +21,13 @@ struct Assets;
 
 pub fn app(store: Arc<dyn ReviewStore>) -> Router {
     let (ws_tx, _) = tokio::sync::broadcast::channel(64);
+    let agent_presence = Arc::new(state::AgentPresenceTracker::new(ws_tx.clone()));
     let state = state::AppState {
         store,
         highlighter: Arc::new(preflight_core::highlight::Highlighter::new()),
         ws_tx,
         agent_status: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+        agent_presence,
     };
     Router::new()
         .route("/api/health", get(health))

@@ -250,6 +250,22 @@
                 </svg>
                 Agent has seen this
               </div>
+            {:else if thread.agent_status === "Researching"}
+              <div
+                class="flex items-center gap-1.5 text-xs text-text-muted mb-2"
+              >
+                <svg
+                  class="w-3.5 h-3.5"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <circle cx="11" cy="11" r="8" />
+                  <path d="M21 21l-4.35-4.35" />
+                </svg>
+                Agent is researching&hellip;
+              </div>
             {:else if thread.agent_status === "Working"}
               <div class="flex items-center gap-1.5 text-xs text-accent mb-2">
                 <svg

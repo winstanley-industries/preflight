@@ -37,6 +37,7 @@ pub enum AuthorType {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AgentStatus {
     Seen,
+    Researching,
     Working,
 }
 

@@ -52,6 +52,8 @@ vi.mock("../../lib/api", () => ({
   listThreads: vi.fn(() => Promise.resolve([])),
   createRevision: vi.fn(),
   updateReviewStatus: vi.fn(() => Promise.resolve()),
+  getAgentPresence: vi.fn(() => Promise.resolve({ connected: false })),
+  requestRevision: vi.fn(() => Promise.resolve()),
   ApiError: class ApiError extends Error {
     status: number;
     constructor(status: number, message: string) {
@@ -94,8 +96,14 @@ vi.mock("../../lib/ws", () => ({
   onReconnect: vi.fn(() => () => {}),
 }));
 
-import { updateReviewStatus } from "../../lib/api";
+import {
+  updateReviewStatus,
+  getAgentPresence,
+  requestRevision,
+} from "../../lib/api";
 const mockUpdateReviewStatus = vi.mocked(updateReviewStatus);
+const mockGetAgentPresence = vi.mocked(getAgentPresence);
+const mockRequestRevision = vi.mocked(requestRevision);
 
 async function renderAndWait() {
   render(ReviewView, { props: { reviewId: REVIEW_ID } });
@@ -189,6 +197,76 @@ describe("ReviewView status toggle", () => {
 
     await vi.waitFor(() => {
       expect(screen.getByText("Closed")).toBeInTheDocument();
+    });
+  });
+});
+
+describe("ReviewView agent presence and revision", () => {
+  beforeEach(() => {
+    cleanup();
+    resolvedReview = { ...mockReview, status: "Open", open_thread_count: 2 };
+    mockGetAgentPresence.mockResolvedValue({ connected: false });
+    mockRequestRevision.mockClear();
+    mockRequestRevision.mockResolvedValue(undefined);
+  });
+
+  it("shows 'No agent' when agent is not connected", async () => {
+    await renderAndWait();
+    expect(screen.getByText("No agent")).toBeInTheDocument();
+  });
+
+  it("shows 'Agent connected' when agent is connected", async () => {
+    mockGetAgentPresence.mockResolvedValue({ connected: true });
+    await renderAndWait();
+    expect(screen.getByText("Agent connected")).toBeInTheDocument();
+  });
+
+  it("shows 'Ready for revision' button when review is open with threads", async () => {
+    mockGetAgentPresence.mockResolvedValue({ connected: true });
+    await renderAndWait();
+    expect(
+      screen.getByRole("button", { name: "Ready for revision" }),
+    ).toBeInTheDocument();
+  });
+
+  it("hides 'Ready for revision' button when no open threads", async () => {
+    resolvedReview = { ...mockReview, status: "Open", open_thread_count: 0 };
+    await renderAndWait();
+    expect(
+      screen.queryByRole("button", { name: "Ready for revision" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("disables 'Ready for revision' button when agent is not connected", async () => {
+    mockGetAgentPresence.mockResolvedValue({ connected: false });
+    await renderAndWait();
+    const btn = screen.getByRole("button", { name: "Ready for revision" });
+    expect(btn).toBeDisabled();
+  });
+
+  it("calls requestRevision on click", async () => {
+    const user = userEvent.setup();
+    mockGetAgentPresence.mockResolvedValue({ connected: true });
+    await renderAndWait();
+
+    await user.click(
+      screen.getByRole("button", { name: "Ready for revision" }),
+    );
+
+    expect(mockRequestRevision).toHaveBeenCalledWith(REVIEW_ID);
+  });
+
+  it("shows 'Revision requested...' after clicking", async () => {
+    const user = userEvent.setup();
+    mockGetAgentPresence.mockResolvedValue({ connected: true });
+    await renderAndWait();
+
+    await user.click(
+      screen.getByRole("button", { name: "Ready for revision" }),
+    );
+
+    await vi.waitFor(() => {
+      expect(screen.getByText("Revision requested...")).toBeInTheDocument();
     });
   });
 });

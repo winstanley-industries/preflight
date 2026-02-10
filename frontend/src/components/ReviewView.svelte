@@ -6,6 +6,8 @@
     listThreads,
     createRevision,
     updateReviewStatus,
+    getAgentPresence,
+    requestRevision,
     ApiError,
   } from "../lib/api";
   import { navigate } from "../lib/router.svelte";
@@ -37,6 +39,8 @@
   let error = $state<string | null>(null);
   let refreshMessage = $state<string | null>(null);
   let statusUpdating = $state(false);
+  let agentConnected = $state(false);
+  let revisionRequested = $state(false);
   let threadsPanelOpen = $state(true);
   let highlightThreadId = $state<string | null>(null);
   let navigateToLine = $state<number | null>(null);
@@ -189,6 +193,12 @@
       if (f.length > 0 && !selectedFile) {
         selectedFile = f[0].path;
       }
+      // Also fetch agent presence (non-blocking, don't fail if unavailable)
+      getAgentPresence(reviewId)
+        .then((p) => {
+          agentConnected = p.connected;
+        })
+        .catch(() => {});
     } catch (e: unknown) {
       error = e instanceof Error ? e.message : "Failed to load review";
     }
@@ -278,6 +288,17 @@
     }
   }
 
+  async function handleRequestRevision() {
+    if (revisionRequested) return;
+    revisionRequested = true;
+    try {
+      await requestRevision(reviewId);
+    } catch (e: unknown) {
+      revisionRequested = false;
+      error = e instanceof Error ? e.message : "Failed to request revision";
+    }
+  }
+
   $effect(() => {
     load();
   });
@@ -299,12 +320,18 @@
       }),
       onEvent("revision_created", (event) => {
         if (event.review_id !== reviewId) return;
+        revisionRequested = false;
         // Refetch revisions and file list
         listRevisions(reviewId).then((revs) => {
           revisions = revs;
           const latest = Math.max(...revs.map((r) => r.revision_number));
           selectRevision(latest);
         });
+      }),
+      onEvent("agent_presence_changed", (event) => {
+        if (event.review_id !== reviewId) return;
+        const { connected } = event.payload as { connected: boolean };
+        agentConnected = connected;
       }),
       onEvent("thread_created", (event) => {
         if (event.review_id !== reviewId) return;
@@ -376,8 +403,32 @@
           {review.open_thread_count} unresolved
         </span>
       {/if}
+      <span
+        class="ml-auto text-xs flex items-center gap-1 {agentConnected
+          ? 'text-green-400'
+          : 'text-text-faint'}"
+      >
+        <span
+          class="inline-block w-1.5 h-1.5 rounded-full {agentConnected
+            ? 'bg-green-400'
+            : 'bg-text-faint'}"
+        ></span>
+        {agentConnected ? "Agent connected" : "No agent"}
+      </span>
+      {#if review.status === "Open" && review.open_thread_count > 0}
+        <button
+          class="text-xs px-2.5 py-1 rounded-md border transition-colors cursor-pointer
+            {!agentConnected || revisionRequested
+            ? 'border-border text-text-faint cursor-not-allowed'
+            : 'border-status-open/50 text-status-open hover:bg-status-open/10'}"
+          disabled={!agentConnected || revisionRequested}
+          onclick={handleRequestRevision}
+        >
+          {revisionRequested ? "Revision requested..." : "Ready for revision"}
+        </button>
+      {/if}
       <button
-        class="ml-auto text-xs px-2.5 py-1 rounded-md border transition-colors cursor-pointer
+        class="text-xs px-2.5 py-1 rounded-md border transition-colors cursor-pointer
           {review.status === 'Open'
           ? 'border-border text-text-muted hover:text-badge-deleted hover:border-badge-deleted/50'
           : 'border-border text-text-muted hover:text-status-open hover:border-status-open/50'}"

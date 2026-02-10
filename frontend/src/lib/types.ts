@@ -12,7 +12,7 @@ export type ThreadOrigin =
   | "ExplanationRequest"
   | "AgentExplanation";
 export type ThreadStatus = "Open" | "Resolved";
-export type AgentStatus = "Seen" | "Working";
+export type AgentStatus = "Seen" | "Researching" | "Working";
 export type AuthorType = "Human" | "Agent";
 export type LineKind = "Context" | "Added" | "Removed";
 export type RevisionTrigger = "Agent" | "Manual";
@@ -151,7 +151,13 @@ export type WsEventType =
   | "comment_added"
   | "thread_status_changed"
   | "thread_acknowledged"
-  | "thread_poked";
+  | "thread_poked"
+  | "revision_requested"
+  | "agent_presence_changed";
+
+export interface AgentPresenceResponse {
+  connected: boolean;
+}
 
 export interface WsEvent {
   event_type: WsEventType;

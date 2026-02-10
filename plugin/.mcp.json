@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "preflight": {
+      "command": "preflight",
+      "args": ["mcp"],
+      "description": "Preflight code review MCP server"
+    }
+  }
+}

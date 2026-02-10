@@ -1,0 +1,16 @@
+{
+  "name": "preflight",
+  "description": "Local code review tool for AI-generated changes",
+  "version": "0.3.0",
+  "author": {
+    "name": "Winstanley Industries"
+  },
+  "homepage": "https://github.com/winstanley-industries/preflight",
+  "repository": "https://github.com/winstanley-industries/preflight",
+  "license": "Apache-2.0",
+  "keywords": [
+    "code-review",
+    "diff",
+    "review-agent"
+  ]
+}

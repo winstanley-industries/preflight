@@ -8,13 +8,15 @@ use uuid::Uuid;
 
 use crate::error::ApiError;
 use crate::state::AppState;
-use crate::types::{CreateReviewRequest, ReviewResponse, UpdateReviewStatusRequest};
+use crate::types::{
+    CreateReviewRequest, FindOrCreateReviewRequest, ReviewResponse, UpdateReviewStatusRequest,
+};
 use crate::ws::{WsEvent, WsEventType};
 use preflight_core::review::{ThreadOrigin, ThreadStatus};
 use preflight_core::store::CreateReviewInput;
 
 pub fn router() -> axum::Router<AppState> {
-    use axum::routing::{get, patch};
+    use axum::routing::{get, patch, post, put};
     axum::Router::new()
         .route(
             "/",
@@ -22,8 +24,12 @@ pub fn router() -> axum::Router<AppState> {
                 .post(create_review)
                 .delete(delete_closed_reviews),
         )
+        .route("/find-or-create", post(find_or_create_review))
         .route("/{id}", get(get_review).delete(delete_review))
         .route("/{id}/status", patch(update_review_status))
+        .route("/{id}/agent-status", get(get_agent_presence))
+        .route("/{id}/agent-presence", put(update_agent_presence))
+        .route("/{id}/request-revision", post(request_revision))
 }
 
 async fn create_review(
@@ -60,6 +66,100 @@ async fn create_review(
         status: review.status,
         file_count: revision.files.len(),
         thread_count,
+        open_thread_count: 0,
+        revision_count: 1,
+        created_at: review.created_at,
+        updated_at: review.updated_at,
+    };
+    let _ = state.ws_tx.send(WsEvent {
+        event_type: WsEventType::ReviewCreated,
+        review_id: response.id.to_string(),
+        payload: serde_json::to_value(&response).unwrap(),
+        timestamp: Utc::now(),
+    });
+    Ok(Json(response))
+}
+
+async fn find_or_create_review(
+    State(state): State<AppState>,
+    Json(request): Json<FindOrCreateReviewRequest>,
+) -> Result<Json<ReviewResponse>, ApiError> {
+    let repo_path_canonical = std::fs::canonicalize(&request.repo_path)
+        .map_err(|e| ApiError::BadRequest(format!("invalid repo_path: {e}")))?
+        .to_string_lossy()
+        .to_string();
+
+    // Look for an existing open review for this repo
+    let summaries = state.store.list_reviews().await;
+    for summary in &summaries {
+        if summary.status != preflight_core::review::ReviewStatus::Open {
+            continue;
+        }
+        let review = state.store.get_review(summary.id).await?;
+        let existing_canonical = std::fs::canonicalize(&review.repo_path)
+            .unwrap_or_else(|_| std::path::PathBuf::from(&review.repo_path))
+            .to_string_lossy()
+            .to_string();
+        if existing_canonical == repo_path_canonical {
+            // Found a matching open review — return it
+            let threads = state.store.get_threads(review.id, None).await?;
+            let thread_count = threads.len();
+            let open_thread_count = threads
+                .iter()
+                .filter(|t| {
+                    t.status == ThreadStatus::Open && t.origin != ThreadOrigin::AgentExplanation
+                })
+                .count();
+            let revisions = state.store.get_revisions(review.id).await?;
+            let file_count = revisions.last().map(|r| r.files.len()).unwrap_or(0);
+            return Ok(Json(ReviewResponse {
+                id: review.id,
+                title: review.title,
+                status: review.status,
+                file_count,
+                thread_count,
+                open_thread_count,
+                revision_count: revisions.len(),
+                created_at: review.created_at,
+                updated_at: review.updated_at,
+            }));
+        }
+    }
+
+    // No existing review found — create a new one
+    let repo_path = std::path::Path::new(&request.repo_path);
+    let base_ref = request
+        .base_ref
+        .unwrap_or_else(|| preflight_core::git_diff::detect_default_base(repo_path));
+
+    let files = preflight_core::git_diff::diff_against_base(repo_path, &base_ref)
+        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+
+    let review = state
+        .store
+        .create_review(CreateReviewInput {
+            title: request.title,
+            repo_path: request.repo_path,
+            base_ref,
+        })
+        .await?;
+
+    let revision = state
+        .store
+        .create_revision(preflight_core::store::CreateRevisionInput {
+            review_id: review.id,
+            trigger: preflight_core::review::RevisionTrigger::Manual,
+            message: None,
+            files,
+        })
+        .await?;
+
+    let response = ReviewResponse {
+        id: review.id,
+        title: review.title,
+        status: review.status,
+        file_count: revision.files.len(),
+        thread_count: 0,
         open_thread_count: 0,
         revision_count: 1,
         created_at: review.created_at,
@@ -144,6 +244,48 @@ async fn update_review_status(
         timestamp: Utc::now(),
     });
     Ok(StatusCode::NO_CONTENT)
+}
+
+async fn request_revision(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, ApiError> {
+    let review = state.store.get_review(id).await?;
+    if review.status != preflight_core::review::ReviewStatus::Open {
+        return Err(ApiError::BadRequest("Review is not open".into()));
+    }
+    let _ = state.ws_tx.send(WsEvent {
+        event_type: WsEventType::RevisionRequested,
+        review_id: id.to_string(),
+        payload: serde_json::json!({}),
+        timestamp: Utc::now(),
+    });
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn update_agent_presence(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<crate::types::UpdateAgentPresenceRequest>,
+) -> Result<StatusCode, ApiError> {
+    // Verify review exists
+    state.store.get_review(id).await?;
+    if request.connected {
+        state.agent_presence.register(id).await;
+    } else {
+        state.agent_presence.deregister(id).await;
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn get_agent_presence(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<crate::types::AgentPresenceResponse>, ApiError> {
+    // Verify the review exists
+    state.store.get_review(id).await?;
+    let connected = state.agent_presence.is_connected(id).await;
+    Ok(Json(crate::types::AgentPresenceResponse { connected }))
 }
 
 async fn delete_review(
@@ -606,5 +748,356 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_request_revision() {
+        let app = test_app().await;
+        let (_repo_dir, repo_path) = setup_test_repo();
+        let id = create_review_for_test(&app, &repo_path).await;
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/api/reviews/{id}/request-revision"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    }
+
+    #[tokio::test]
+    async fn test_get_agent_presence_defaults_to_disconnected() {
+        let app = test_app().await;
+        let (_repo_dir, repo_path) = setup_test_repo();
+        let id = create_review_for_test(&app, &repo_path).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/reviews/{id}/agent-status"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let json = body_json(response).await;
+        assert_eq!(json["connected"], false);
+    }
+
+    #[tokio::test]
+    async fn test_get_agent_presence_not_found() {
+        let app = test_app().await;
+        let fake_id = uuid::Uuid::new_v4();
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/reviews/{fake_id}/agent-status"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_update_agent_presence() {
+        let app = test_app().await;
+        let (_repo_dir, repo_path) = setup_test_repo();
+        let id = create_review_for_test(&app, &repo_path).await;
+
+        // Register agent presence
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri(format!("/api/reviews/{id}/agent-presence"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({ "connected": true }).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+
+        // Verify agent is connected
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/reviews/{id}/agent-status"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let json = body_json(response).await;
+        assert_eq!(json["connected"], true);
+
+        // Deregister agent presence
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri(format!("/api/reviews/{id}/agent-presence"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({ "connected": false }).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    }
+
+    #[tokio::test]
+    async fn test_update_agent_presence_not_found() {
+        let app = test_app().await;
+        let fake_id = uuid::Uuid::new_v4();
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri(format!("/api/reviews/{fake_id}/agent-presence"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({ "connected": true }).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_request_revision_closed_review() {
+        let app = test_app().await;
+        let (_repo_dir, repo_path) = setup_test_repo();
+        let id = create_review_for_test(&app, &repo_path).await;
+
+        // Close the review first
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .method("PATCH")
+                    .uri(format!("/api/reviews/{id}/status"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({ "status": "Closed" }).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/api/reviews/{id}/request-revision"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_find_or_create_review_creates_new() {
+        let app = test_app().await;
+        let (_repo_dir, repo_path) = setup_test_repo();
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/reviews/find-or-create")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "repo_path": repo_path,
+                            "title": "New review",
+                            "base_ref": "HEAD"
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let json = body_json(response).await;
+        assert_eq!(json["title"], "New review");
+        assert_eq!(json["status"], "Open");
+        assert_eq!(json["file_count"], 1);
+        assert_eq!(json["revision_count"], 1);
+    }
+
+    #[tokio::test]
+    async fn test_find_or_create_review_returns_existing() {
+        let app = test_app().await;
+        let (_repo_dir, repo_path) = setup_test_repo();
+
+        // First call creates the review
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/reviews/find-or-create")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "repo_path": repo_path,
+                            "title": "First review",
+                            "base_ref": "HEAD"
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let first = body_json(response).await;
+        let first_id = first["id"].as_str().unwrap().to_string();
+
+        // Second call should return the same review
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/reviews/find-or-create")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "repo_path": repo_path,
+                            "title": "Should be ignored",
+                            "base_ref": "HEAD"
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let second = body_json(response).await;
+        assert_eq!(second["id"].as_str().unwrap(), first_id);
+        assert_eq!(second["title"], "First review");
+    }
+
+    #[tokio::test]
+    async fn test_find_or_create_review_creates_after_close() {
+        let app = test_app().await;
+        let (_repo_dir, repo_path) = setup_test_repo();
+
+        // Create a review
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/reviews/find-or-create")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "repo_path": repo_path,
+                            "title": "First review",
+                            "base_ref": "HEAD"
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let first = body_json(response).await;
+        let first_id = first["id"].as_str().unwrap().to_string();
+
+        // Close the review
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .method("PATCH")
+                    .uri(format!("/api/reviews/{first_id}/status"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({ "status": "Closed" }).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        // Now find-or-create should create a new review
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/reviews/find-or-create")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "repo_path": repo_path,
+                            "title": "Second review",
+                            "base_ref": "HEAD"
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let second = body_json(response).await;
+        assert_ne!(second["id"].as_str().unwrap(), first_id);
+        assert_eq!(second["title"], "Second review");
+    }
+
+    #[tokio::test]
+    async fn test_find_or_create_review_bad_repo_path() {
+        let app = test_app().await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/reviews/find-or-create")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "repo_path": "/tmp/nonexistent_repo_xyz",
+                            "base_ref": "HEAD"
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 }
