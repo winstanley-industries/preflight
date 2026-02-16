@@ -11,7 +11,7 @@ async-trait = { workspace = true }
 clap = { workspace = true }
 rmcp = { workspace = true }
 axum = { version = "0.8.8", features = ["ws"] }
-futures-util = "0.3.31"
+futures-util = "0.3.32"
 chrono = { workspace = true }
 mime_guess = "2.0.5"
 rust-embed = "8.11.0"
